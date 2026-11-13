@@ -169,7 +169,7 @@ ol.picks{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1 1 auto;min-he
       <button type="button" class="chipbtn" id="bCrane" aria-pressed="false">Move crane</button>
       <button type="button" class="chipbtn" id="bLay" aria-pressed="false">Move laydown</button>
       <button type="button" class="chipbtn" id="bLayAuto" hidden>Laydown by crane</button>
-      <button type="button" class="chipbtn" id="bNums" aria-pressed="true">Numbers</button>
+      <button type="button" class="chipbtn" id="bNums" aria-pressed="false">Pick numbers</button>
       <div class="legend" id="legend"><span><i style="background:var(--primer)"></i>Set</span><span><i style="background:var(--ghost);opacity:.6"></i>Ready to pick</span><span><i style="background:var(--ghost);opacity:.2"></i>Needs columns</span></div>
     </div>
     <div class="tip" id="tip" hidden></div>
@@ -294,7 +294,7 @@ const describe = m => m.kind === 'xb' ? `X-brace, tier ${m.tier}` : m.kind === '
 
 /* ---------------- state ---------------- */
 const DEF_CRANE = { x: 0, z: -66 };
-let seq = [], crane = { ...DEF_CRANE }, mode = 'build', playT = 0, playing = false, speed = 2, showNums = true, sample = false, cleared = null;
+let seq = [], crane = { ...DEF_CRANE }, mode = 'build', playT = 0, playing = false, speed = 2, showNums = false, sample = false, cleared = null;
 let EV = { rows: [], coreAt: -1 };
 const fmt = n => Math.round(n).toLocaleString('en-US');
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -798,7 +798,9 @@ function setMode(m) {
 }
 $('mBuild').onclick = () => setMode('build');
 $('mPlay').onclick = () => setMode('play');
-$('bNums').onclick = () => { showNums = !showNums; $('bNums').setAttribute('aria-pressed', String(showNums)); };
+try { showNums = localStorage.getItem('pickbuilder.nums') === '1'; } catch (e) {}
+$('bNums').setAttribute('aria-pressed', String(showNums));
+$('bNums').onclick = () => { showNums = !showNums; $('bNums').setAttribute('aria-pressed', String(showNums)); try { localStorage.setItem('pickbuilder.nums', showNums ? '1' : '0'); } catch (e) {} };
 let placing = false, before = null;
 function syncPlaceBtns() { $('bCrane').setAttribute('aria-pressed', String(placing === 'crane')); $('bLay').setAttribute('aria-pressed', String(placing === 'lay')); $('bLayAuto').hidden = !layAt; setHint(); }
 function cancelPlace() { if (placing === 'crane') crane = before; if (placing === 'lay') layAt = before; placing = false; placeCrane(); syncPlaceBtns(); }
