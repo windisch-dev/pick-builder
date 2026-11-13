@@ -119,6 +119,10 @@ ol.picks{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1 1 auto;min-he
 .empty b{color:var(--ink)}
 .foot{padding:8px 12px;font-size:11.5px;line-height:1.35;color:var(--ink-2);border-top:1px solid var(--line)}
 .sample{font:600 10.5px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--hivis-ink);margin-left:auto}
+.cranesel{display:flex;align-items:center;gap:6px;background:var(--raised);border:1px solid var(--line);border-radius:5px;padding:2px 3px 2px 10px}
+.cranesel span{font:600 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase}
+.cranesel select{border:0;background:var(--panel);font:500 13px var(--body);padding:4px 6px;border-radius:3px;max-width:250px;color:var(--ink)}
+.dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)}
 .fail{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;color:var(--ink-2)}
 
 @media (max-width:860px){
@@ -151,7 +155,10 @@ ol.picks{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1 1 auto;min-he
     <div class="labels" id="labels"></div>
     <div class="tools" id="tools">
       <div class="hint" id="hint"></div>
+      <label class="cranesel" for="craneSel"><span>Crane</span><select id="craneSel"></select></label>
       <button type="button" class="chipbtn" id="bCrane" aria-pressed="false">Move crane</button>
+      <button type="button" class="chipbtn" id="bLay" aria-pressed="false">Move laydown</button>
+      <button type="button" class="chipbtn" id="bLayAuto" hidden>Laydown by crane</button>
       <button type="button" class="chipbtn" id="bNums" aria-pressed="true">Numbers</button>
       <div class="legend" id="legend"><span><i style="background:var(--primer)"></i>Set</span><span><i style="background:var(--ghost);opacity:.6"></i>Ready to pick</span><span><i style="background:var(--ghost);opacity:.2"></i>Needs columns</span></div>
     </div>
@@ -177,6 +184,7 @@ ol.picks{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1 1 auto;min-he
       <div class="stat"><b>Max radius</b><span id="sRad">0<small>ft</small></span></div>
     </div>
     <div class="core"><span class="dot" id="coreDot"></span><span id="coreTxt">Braced core not plumbed up yet</span><span class="sample" id="sampleTag" hidden>Sample sequence</span></div>
+    <div class="core"><span class="dot" id="layDot"></span><span id="layTxt">Laydown</span></div>
     <div class="acts">
       <button type="button" class="act" id="aUndo">Undo</button>
       <button type="button" class="act" id="aClear">Clear</button>
@@ -185,7 +193,7 @@ ol.picks{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1 1 auto;min-he
     </div>
     <div class="listhead"><span>#</span><span>Piece</span><span class="r">Lb</span><span class="r">Rad</span><span>Chart</span></div>
     <ol class="picks" id="list"></ol>
-    <div class="foot">Radius is from the crane's center of rotation to the piece's center of gravity. Chart is an example 140 ft boom crawler chart with 250 lb of rigging added to every pick. Illustrative only, not for lift planning.</div>
+    <div class="foot" id="foot">Radius is from the crane's center of rotation to the piece's center of gravity. Chart is an example 140 ft boom crawler chart with 250 lb of rigging added to every pick. Illustrative only, not for lift planning.</div>
   </aside>
 </main>
 
@@ -210,9 +218,27 @@ const SH = {
   'W18x35': { d: 17.7, bf: 6.0, plf: 35 }, 'W16x26': { d: 15.7, bf: 5.5, plf: 26 }, 'W14x22': { d: 13.7, bf: 5.0, plf: 22 }
 };
 const COLV = SH['W12x65'].d / 12 * VIS;
-const CHART = [[12, 60000], [20, 42000], [30, 27000], [40, 18500], [50, 13500], [60, 10200], [70, 7900], [80, 6200], [90, 4900], [100, 3900], [110, 3100], [120, 2500], [130, 2000]];
-const MAXR = CHART[CHART.length - 1][0];
-const LB = 140, FOOT = 5, FOOTY = 6, HOUSEY = 5;
+const TYPES = {
+  luffer: { label: 'LR 1300 class · luffing jib', base: 'crawler', boom: 'luffer', Lm: 180, mainDeg: 85, Lj: 150, minR: true,
+    chart: [[34, 62000], [50, 54000], [70, 42000], [90, 32000], [110, 25000], [130, 19000], [150, 14500], [165, 11500]] },
+  lattice: { label: 'LR 1300 class · main boom', base: 'crawler', boom: 'lattice', L: 160,
+    chart: [[15, 180000], [20, 140000], [30, 95000], [40, 70000], [50, 54000], [60, 43000], [70, 35000], [80, 29000], [90, 24000], [100, 20000], [110, 17000], [120, 14000], [130, 12000], [140, 10000], [150, 8500]] },
+  ltr: { label: 'LTR 1220 class · telescopic crawler', base: 'tcrawler', boom: 'tele', Lmin: 45, Lmax: 165,
+    chart: [[10, 150000], [20, 100000], [30, 68000], [40, 48000], [50, 36000], [60, 28000], [70, 22000], [80, 17500], [90, 14000], [100, 11200], [110, 9000], [120, 7200], [130, 5800], [140, 4600], [150, 3600]] },
+  ltrjib: { label: 'LTR 1220 class · with jib', base: 'tcrawler', boom: 'tele', Lmin: 45, Lmax: 165, jib: 50, minR: true,
+    chart: [[30, 22000], [50, 18000], [70, 14500], [90, 11500], [110, 9000], [130, 7000], [150, 5400], [170, 4000], [180, 3300]] },
+  ltm: { label: 'LTM 1220 class · all terrain', base: 'at', boom: 'tele', Lmin: 48, Lmax: 197,
+    chart: [[10, 200000], [20, 120000], [30, 80000], [40, 58000], [50, 43000], [60, 33000], [70, 26000], [80, 20500], [90, 16000], [100, 12800], [110, 10200], [120, 8200], [130, 6600], [140, 5300], [150, 4200], [160, 3300], [170, 2600]] },
+  ltmjib: { label: 'LTM 1220 class · with jib', base: 'at', boom: 'tele', Lmin: 48, Lmax: 197, jib: 59, minR: true,
+    chart: [[30, 26000], [50, 21000], [70, 17000], [90, 13500], [110, 10500], [130, 8200], [150, 6400], [170, 4900], [190, 3700], [200, 3100]] },
+  rt: { label: 'Grove RT class · rough terrain', base: 'rt', boom: 'tele', Lmin: 38, Lmax: 142,
+    chart: [[10, 90000], [20, 52000], [30, 33000], [40, 23000], [50, 16500], [60, 12000], [70, 9000], [80, 7000], [90, 5400], [100, 4200], [110, 3200], [120, 2400]] }
+};
+let craneType = 'luffer';
+const CT = () => TYPES[craneType];
+const minRad = () => CT().chart[0][0];
+const maxRad = () => CT().chart[CT().chart.length - 1][0];
+const D2R = Math.PI / 180;
 const KIND = { col: 'Column', gir: 'Girder', bm: 'Beam', xb: 'X-brace' };
 
 const M = {}, LIST = [];
@@ -266,8 +292,9 @@ const ease = t => t * t * (3 - 2 * t);
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 
 function capacity(r) {
-  if (r <= CHART[0][0]) return CHART[0][1];
-  for (let i = 1; i < CHART.length; i++) if (r <= CHART[i][0]) { const [r0, c0] = CHART[i - 1], [r1, c1] = CHART[i]; return lerp(c0, c1, (r - r0) / (r1 - r0)); }
+  const C = CT().chart;
+  if (r < C[0][0]) return CT().minR ? 0 : C[0][1];
+  for (let i = 1; i < C.length; i++) if (r <= C[i][0]) { const [r0, c0] = C[i - 1], [r1, c1] = C[i]; return lerp(c0, c1, (r - r0) / (r1 - r0)); }
   return 0;
 }
 const radiusOf = m => Math.hypot(m.x - crane.x, m.z - crane.z);
@@ -279,6 +306,7 @@ function evaluate() {
   for (let i = 0; i < seq.length; i++) {
     const m = M[seq[i]], f = [];
     if (i === 0 && !(m.kind === 'col' && m.box.length)) f.push(['warn', 'Start at a braced bay. Stand a column in one of the braced boxes first.']);
+    else if (i === 0 && !farBox().cols.includes(m.id)) f.push(['warn', `Start at the braced bay farthest from the crane (${farBox().name}) so you can hang far to near.`]);
     else if (coreAt < 0 && i > 0 && !m.box.length) f.push(['warn', 'Out of the braced bay before the core is plumbed and braced.']);
     set.add(m.id);
     if (isHz(m) && m.lev === 'R' && !set.has(m.twin)) f.push(['note', 'Roof piece in before the level 2 piece under it.']);
@@ -290,13 +318,17 @@ function evaluate() {
       if (free > 4) f.push(['warn', `${free} columns freestanding. Tie some in before you stand more.`]);
     }
     if (coreAt >= 0 && !justMade && isHz(m) && !tied(m.cols[0], set, coreBoxes)) f.push(['warn', 'Not tied back to the braced core.']);
+    const bl = blocker(m, set);
+    if (bl) f.push(['warn', `Hanging over ${bl.id} to reach the back side. Work far to near.`]);
     const r = radiusOf(m), cap = capacity(r), pct = cap > 0 ? (m.wt + RIG) / cap * 100 : Infinity;
-    if (!isFinite(pct)) f.push(['bad', `Past the end of the chart at ${Math.round(r)} ft. Move the crane.`]);
+    if (!isFinite(pct)) f.push(['bad', r < minRad() ? `Inside the ${minRad()} ft minimum radius for this setup. Back the crane off.` : `Past the end of the chart at ${Math.round(r)} ft. Move the crane in.`]);
     else if (pct > 100) f.push(['bad', 'Over the chart at this radius. Move the crane closer.']);
     else if (pct >= 85) f.push(['warn', 'Over 85% of chart. Plan it as a critical lift.']);
     rows.push({ m, r, cap, pct, flags: f });
   }
-  EV = { rows, coreAt, coreBox: coreAt >= 0 ? BOXES.find(b => b.core.every(id => seq.slice(0, coreAt + 1).includes(id))) : null };
+  const Ld = laydown(), lr = Math.hypot(Ld.x - crane.x, Ld.z - crane.z), lcap = capacity(lr);
+  const heavy = seq.reduce((w, id) => Math.max(w, M[id].wt), 0), lpct = lcap > 0 ? (heavy + RIG) / lcap * 100 : Infinity;
+  EV = { lay: { r: lr, pct: lpct, heavy }, rows, coreAt, coreBox: coreAt >= 0 ? BOXES.find(b => b.core.every(id => seq.slice(0, coreAt + 1).includes(id))) : null };
 }
 function tied(colId, set, boxes) {
   const start = new Set(boxes.flatMap(b => b.cols)), seen = new Set([colId]), q = [colId];
@@ -306,18 +338,45 @@ function tied(colId, set, boxes) {
   }
   return false;
 }
+function samplePts(s) {
+  if (s.kind === 'col') return [[s.x, s.z]];
+  const h = s.len * .4, dx = Math.sin(s.yaw) * h, dz = Math.cos(s.yaw) * h;
+  return [[s.x - dx, s.z - dz], [s.x, s.z], [s.x + dx, s.z + dz]];
+}
+// framed steel sitting between the crane and the piece: you would be reaching over it to hang the back side
+function blocker(m, set) {
+  const r = radiusOf(m); if (r < 1) return null;
+  const ux = (m.x - crane.x) / r, uz = (m.z - crane.z) / r, own = new Set(m.cols || []), far = new Set(farBox().all);
+  for (const id of set) {
+    if (id === m.id || own.has(id)) continue;
+    const s = M[id];
+    if (s.kind === 'col' || far.has(id)) continue;                    // lone columns and the far braced bay (it goes up first) don't count                                    // booming past a lone column is fine; framed steel is the problem
+    if (m.cols && s.cols.every(c => own.has(c))) continue;            // same frame line, a level below or the brace in it
+    if (m.kind === 'col' && s.cols.includes(m.id)) continue;
+    for (const [px, pz] of samplePts(s)) {
+      const ax = px - crane.x, az = pz - crane.z, along = ax * ux + az * uz, perp = Math.abs(ax * uz - az * ux);
+      if (along > 4 && along < r - 5 && perp < 6) return s;
+    }
+  }
+  return null;
+}
+const farBox = () => BOXES.slice().sort((a, b) => boxR(b) - boxR(a))[0];
+const boxR = b => { const cs = b.cols.map(id => M[id]); return Math.hypot(cs.reduce((a, c) => a + c.x, 0) / 4 - crane.x, cs.reduce((a, c) => a + c.z, 0) / 4 - crane.z); };
+// far to near: start at the braced bay farthest from the crane, then always take the farthest piece you can tie in
 function suggest() {
   const out = [], set = new Set(), put = id => { if (!set.has(id)) { out.push(id); set.add(id); } };
-  const box = BOXES[0];
-  box.cols.forEach(put);
-  box.lv.forEach(s => put(s.replace('?', '2'))); box.br.forEach(s => put(s.replace('?', '1')));
-  box.lv.forEach(s => put(s.replace('?', 'R'))); box.br.forEach(s => put(s.replace('?', '2')));
-  const cx = sx(45), cz = sz(15);
-  const pri = m => m.kind === 'xb' ? 2 + m.tier : m.lev === '2' ? 0 : 1;
-  const fill = () => LIST.filter(m => m.kind !== 'col' && ready(m, set)).sort((a, b) => pri(a) - pri(b)).forEach(m => put(m.id));
-  LIST.filter(m => m.kind === 'col' && !set.has(m.id)).sort((a, b) => Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz) || a.x - b.x)
-    .forEach(c => { put(c.id); fill(); });
-  fill();
+  const R = m => radiusOf(m), pri = m => m.kind === 'xb' ? (m.tier === 1 ? 1 : 3) : m.lev === '2' ? 0 : 2;
+  const order = (a, b) => Math.abs(R(b) - R(a)) > .5 ? R(b) - R(a) : pri(a) - pri(b);
+  const box = farBox();
+  box.cols.map(id => M[id]).sort(order).forEach(m => put(m.id));
+  box.all.map(id => M[id]).filter(m => m.kind !== 'col').sort(order).forEach(m => put(m.id));
+  const fill = () => LIST.filter(m => m.kind !== 'col' && ready(m, set)).sort(order).forEach(m => put(m.id));
+  for (;;) {
+    const cand = LIST.filter(c => c.kind === 'col' && !set.has(c.id) && c.links.some(l => isHz(M[l]) && M[l].cols.some(o => o !== c.id && set.has(o))));
+    if (!cand.length) break;
+    cand.sort(order); put(cand[0].id); fill();
+  }
+  LIST.filter(c => c.kind === 'col').forEach(c => put(c.id)); fill();
   return out;
 }
 
@@ -330,9 +389,9 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 stage.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(38, 1, 1, 4000);
-camera.position.set(-175, 128, -205);
+camera.position.set(-215, 165, -250);
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.target.set(-6, 22, -14); controls.enableDamping = true; controls.dampingFactor = .08;
+controls.target.set(-10, 30, -22); controls.enableDamping = true; controls.dampingFactor = .08;
 controls.maxPolarAngle = Math.PI * .48; controls.minDistance = 40; controls.maxDistance = 700; controls.update();
 
 const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f8c, .75); scene.add(hemi);
@@ -354,6 +413,7 @@ const mat = {
   crane: new THREE.MeshStandardMaterial({ roughness: .55, metalness: .2 }),
   dark: new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: .8 }),
   glass: new THREE.MeshStandardMaterial({ color: 0x24394d, roughness: .3 }),
+  pad: new THREE.MeshStandardMaterial({ color: 0x6f5a40, roughness: 1 }),
   hit: new THREE.MeshBasicMaterial({ visible: false })
 };
 const lineMat = { grid: new THREE.LineBasicMaterial(), lace: new THREE.LineBasicMaterial(), wire: new THREE.LineBasicMaterial({ color: 0x1d2024 }), radius: new THREE.LineBasicMaterial(), ring: new THREE.LineBasicMaterial({ transparent: true, opacity: .55 }) };
@@ -422,61 +482,152 @@ function finalPose(m) { const n = NODES[m.id]; n.position.set(m.x, m.y, m.z); n.
 function look(m, material) { const n = NODES[m.id]; n.visible = true; for (const v of n.userData.vis) { v.material = material; v.castShadow = material === mat.set || material === mat.last || material === mat.fly || material === mat.hover; } }
 LIST.forEach(finalPose);
 
-// crane
-const C3 = (() => {
-  const root = new THREE.Group(); scene.add(root);
-  const lower = new THREE.Group(); root.add(lower);
-  const tg = new THREE.BoxGeometry(24, 3.6, 3.4);
-  [-7.2, 7.2].forEach(z => { const t = new THREE.Mesh(tg, mat.dark); t.position.set(0, 1.8, z); t.castShadow = true; lower.add(t); });
-  const car = new THREE.Mesh(new THREE.BoxGeometry(11, 2.4, 11.4), mat.dark); car.position.y = 3.4; car.castShadow = true; lower.add(car);
-  const house = new THREE.Group(); house.position.y = HOUSEY; root.add(house);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(19, 6.4, 9.6), mat.crane); body.position.set(-3.5, 3.2, 0); body.castShadow = true; house.add(body);
-  const cw = new THREE.Mesh(new THREE.BoxGeometry(4.5, 5.6, 10), mat.dark); cw.position.set(-14.6, 2.9, 0); cw.castShadow = true; house.add(cw);
-  const cab = new THREE.Mesh(new THREE.BoxGeometry(5.6, 5.4, 3.4), mat.crane); cab.position.set(4.6, 3.3, -6.6); cab.castShadow = true; house.add(cab);
-  const win = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.8, 2.8), mat.glass); win.position.set(7.45, 4.2, -6.6); house.add(win);
-  const gp = [-9, 6.4, -3.4, -6, 17, 0, -9, 6.4, 3.4, -6, 17, 0, -1, 6.4, -3.4, -6, 17, 0, -1, 6.4, 3.4, -6, 17, 0];
-  const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3)); house.add(new THREE.LineSegments(gg, lineMat.wire));
-  const boom = new THREE.Group(); boom.position.set(FOOT, FOOTY, 0); house.add(boom);
-  const W2 = 1.9, cg = new THREE.BoxGeometry(LB, .42, .42);
-  [[W2, W2], [W2, -W2], [-W2, W2], [-W2, -W2]].forEach(([y, z]) => { const c = new THREE.Mesh(cg, mat.crane); c.position.set(LB / 2, y, z); c.castShadow = true; boom.add(c); });
-  const lp = [], st = 5;
-  for (let x = 0, k = 0; x < LB; x += st, k++) {
-    const x2 = Math.min(LB, x + st), s = k % 2 ? 1 : -1;
-    lp.push(x, W2, -W2 * s, x2, W2, W2 * s, x, -W2, -W2 * s, x2, -W2, W2 * s, x, -W2 * s, W2, x2, W2 * s, W2, x, -W2 * s, -W2, x2, W2 * s, -W2);
+// crane rigs
+const mkLine = (n, m) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); const l = new THREE.LineSegments(g, m); l.frustumCulled = false; return l; };
+const unitBox = new THREE.BoxGeometry(1, 1, 1), wheelGeo = new THREE.CylinderGeometry(1, 1, 1, 18);
+function box(parent, a, b, c, x, y, z, m) { const o = new THREE.Mesh(unitBox, m); o.scale.set(a, b, c); o.position.set(x, y, z); o.castShadow = true; o.receiveShadow = true; parent.add(o); return o; }
+function wheel(parent, r, w, x, z) { const o = new THREE.Mesh(wheelGeo, mat.dark); o.scale.set(r, w, r); o.rotation.x = Math.PI / 2; o.position.set(x, r, z); o.castShadow = true; parent.add(o); }
+function strut(o, ax, ay, bx, by) { const dx = bx - ax, dy = by - ay; o.position.set((ax + bx) / 2, (ay + by) / 2, 0); o.rotation.z = Math.atan2(dy, dx); o.scale.x = Math.max(.1, Math.hypot(dx, dy)); }
+function lattice(L, W) {
+  const g = new THREE.Group(), cg = new THREE.BoxGeometry(L, .4, .4);
+  [[W, W], [W, -W], [-W, W], [-W, -W]].forEach(([y, z]) => { const c = new THREE.Mesh(cg, mat.crane); c.position.set(L / 2, y, z); c.castShadow = true; g.add(c); });
+  const lp = [], st = Math.max(4, W * 2.6);
+  for (let x = 0, k = 0; x < L - .01; x += st, k++) {
+    const x2 = Math.min(L, x + st), q = k % 2 ? 1 : -1;
+    lp.push(x, W, -W * q, x2, W, W * q, x, -W, -W * q, x2, -W, W * q, x, -W * q, W, x2, W * q, W, x, -W * q, -W, x2, W * q, -W);
   }
-  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); boom.add(new THREE.LineSegments(lg, lineMat.lace));
-  const head = new THREE.Mesh(new THREE.BoxGeometry(3, 3.4, 4.2), mat.crane); head.position.set(LB, 0, 0); boom.add(head);
-  const mkLine = (n, m) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); const l = new THREE.LineSegments(g, m); l.frustumCulled = false; return l; };
-  const pendant = mkLine(2, lineMat.wire); house.add(pendant);
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); g.add(new THREE.LineSegments(lg, lineMat.lace));
+  box(g, W * 1.5, W * 1.8, W * 2.3, L, 0, 0, mat.crane);
+  return g;
+}
+function teleHouse(ho) { box(ho, 15, 4.6, 8, -4.5, 2.3, 0, mat.crane); box(ho, 4, 4.4, 8.4, -13, 2.2, 0, mat.dark); box(ho, 5, 5, 3.2, 3.5, 2.5, -5.8, mat.crane); box(ho, .3, 2.6, 2.6, 6.05, 3.2, -5.8, mat.glass); }
+const BASES = {
+  crawler: { houseY: 5.2, pivot: [5, 6], gantry: true, build(lo, ho) {
+    [-8.5, 8.5].forEach(z => box(lo, 30, 3.8, 3.8, 0, 1.9, z, mat.dark)); box(lo, 12, 2.6, 14, 0, 3.7, 0, mat.dark);
+    box(ho, 21, 6.6, 10, -4, 3.3, 0, mat.crane); box(ho, 5, 6, 11, -16.5, 3, 0, mat.dark); box(ho, 5.6, 5.4, 3.4, 4.6, 3.3, -6.9, mat.crane); box(ho, .3, 2.8, 2.8, 7.45, 4.2, -6.9, mat.glass);
+    const gp = [-11, 6.6, -3.6, -8, 18, 0, -11, 6.6, 3.6, -8, 18, 0, -2, 6.6, -3.6, -8, 18, 0, -2, 6.6, 3.6, -8, 18, 0];
+    const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3)); ho.add(new THREE.LineSegments(gg, lineMat.wire)); } },
+  tcrawler: { houseY: 4.8, pivot: [4, 5.5], build(lo, ho) { [-6.5, 6.5].forEach(z => box(lo, 24, 3.4, 3.2, 0, 1.7, z, mat.dark)); box(lo, 10, 2.4, 10, 0, 3.5, 0, mat.dark); teleHouse(ho); } },
+  at: { houseY: 7.3, pivot: [4, 5], build(lo, ho) {
+    box(lo, 50, 3.8, 9.4, 0, 5.4, 0, mat.crane); box(lo, 6.5, 5.2, 9.4, 26.5, 6, 0, mat.crane); box(lo, .3, 2.6, 7.6, 29.8, 7, 0, mat.glass);
+    [-20, -14.5, -9, 9, 14.5].forEach(x => [-4, 4].forEach(z => wheel(lo, 2.2, 1.7, x, z)));
+    [-17, 17].forEach(x => { box(lo, 1.4, 1.2, 25, x, 4.2, 0, mat.dark); [-12, 12].forEach(z => { box(lo, 3.4, .6, 3.4, x, .3, z, mat.dark); box(lo, .9, 3.6, .9, x, 2.1, z, mat.dark); }); });
+    teleHouse(ho); } },
+  rt: { houseY: 7.2, pivot: [3, 4.5], build(lo, ho) {
+    box(lo, 30, 3.6, 10, 0, 5.4, 0, mat.crane); [-10, 10].forEach(x => [-5.3, 5.3].forEach(z => wheel(lo, 3, 2.2, x, z)));
+    [-12.5, 12.5].forEach(x => { box(lo, 1.2, 1.1, 23, x, 4.6, 0, mat.dark); [-11, 11].forEach(z => { box(lo, 3, .5, 3, x, .25, z, mat.dark); box(lo, .8, 4.2, .8, x, 2.4, z, mat.dark); }); });
+    teleHouse(ho); } }
+};
+const craneRoot = new THREE.Group(); scene.add(craneRoot);
+const RIGS = {};
+function buildRig(key) {
+  const t = TYPES[key], B = BASES[t.base], rig = { t, B, root: new THREE.Group(), lower: new THREE.Group(), house: new THREE.Group() };
+  rig.root.add(rig.lower, rig.house); rig.house.position.y = B.houseY; B.build(rig.lower, rig.house);
+  const [px, py] = B.pivot;
+  if (t.boom === 'lattice' || t.boom === 'luffer') {
+    rig.main = lattice(t.boom === 'luffer' ? t.Lm : t.L, 2.1); rig.main.position.set(px, py, 0); rig.house.add(rig.main);
+    rig.pend = mkLine(t.boom === 'luffer' ? 10 : 2, lineMat.wire); rig.house.add(rig.pend);
+    if (t.boom === 'luffer') { rig.main.rotation.z = t.mainDeg * D2R; rig.jib = lattice(t.Lj, 1.5); rig.house.add(rig.jib); }
+  } else {
+    rig.secs = [0, 1, 2, 3].map(i => box(rig.house, 1, 3.6 - i * .55, 3.2 - i * .5, 0, 0, 0, mat.crane));
+    rig.head = box(rig.house, 2.6, 2.8, 2.8, 0, 0, 0, mat.crane);
+    rig.cyl = box(rig.house, 1, 1.2, 1.2, 0, 0, 0, mat.dark);
+    if (t.jib) { rig.jib = lattice(t.jib, 1.0); rig.house.add(rig.jib); }
+  }
+  craneRoot.add(rig.root); return rig;
+}
+// pose the rig so the hook hangs at hp; returns the sheave point in house coordinates
+function aim(rig, hp) {
+  const t = rig.t, B = rig.B, [px, py] = B.pivot;
+  const dx = hp.x - crane.x, dz = hp.z - crane.z, r = Math.max(px + 8, Math.hypot(dx, dz));
+  rig.house.rotation.y = Math.atan2(-dz, dx);
+  const hy = hp.y - B.houseY;
+  if (t.boom === 'lattice') {
+    const th = Math.acos(clamp((r - px) / t.L, .06, .985)); rig.main.rotation.z = th;
+    const tx = px + t.L * Math.cos(th), ty = py + t.L * Math.sin(th);
+    const a = rig.pend.geometry.attributes.position; a.setXYZ(0, -8, 18, 0); a.setXYZ(1, tx, ty, 0); a.needsUpdate = true;
+    return [tx, ty + 1.6];
+  }
+  if (t.boom === 'luffer') {
+    const am = t.mainDeg * D2R, mx = px + t.Lm * Math.cos(am), my = py + t.Lm * Math.sin(am);
+    const ph = Math.acos(clamp((r - mx) / t.Lj, Math.cos(86 * D2R), Math.cos(8 * D2R)));
+    rig.jib.position.set(mx, my, 0); rig.jib.rotation.z = ph;
+    const tx = mx + t.Lj * Math.cos(ph), ty = my + t.Lj * Math.sin(ph);
+    const s1x = mx + 26 * Math.cos(am + 55 * D2R), s1y = my + 26 * Math.sin(am + 55 * D2R);
+    const s2x = mx + 24 * Math.cos(ph + 70 * D2R), s2y = my + 24 * Math.sin(ph + 70 * D2R);
+    const a = rig.pend.geometry.attributes.position;
+    [[mx, my, s1x, s1y], [mx, my, s2x, s2y], [s1x, s1y, s2x, s2y], [s2x, s2y, tx, ty], [s1x, s1y, -8, 18]].forEach((q, i) => { a.setXYZ(i * 2, q[0], q[1], 0); a.setXYZ(i * 2 + 1, q[2], q[3], 0); });
+    a.needsUpdate = true;
+    return [tx, ty + 1.2];
+  }
+  // telescopic: pick a boom length and angle that keeps the head well above the hook
+  const off = 15 * D2R, Lj = t.jib || 0, want = hy + 24, rr = r - px;
+  let L = t.Lmin, th = 1;
+  for (let k = 0; k < 6; k++) {
+    const bx = Math.max(3, rr - Lj * Math.cos(th - off)), by = Math.max(10, want - py - Lj * Math.sin(th - off));
+    L = clamp(Math.hypot(bx, by), t.Lmin, t.Lmax);
+    th = Math.acos(clamp(bx / L, .17, .99));
+  }
+  const c = Math.cos(th), sn = Math.sin(th), seg = L / 4;
+  rig.secs.forEach((o, i) => { const len = seg + (i < 3 ? 2.5 : 0), mid = i * seg + len / 2; o.scale.x = len; o.position.set(px + c * mid, py + sn * mid, 0); o.rotation.z = th; });
+  let tx = px + c * L, ty = py + sn * L;
+  rig.head.position.set(tx, ty, 0); rig.head.rotation.z = th;
+  strut(rig.cyl, px + 6, .8, px + c * L * .3, py + sn * L * .3 - 1.4);
+  if (Lj) { rig.jib.position.set(tx, ty, 0); rig.jib.rotation.z = th - off; tx += Lj * Math.cos(th - off); ty += Lj * Math.sin(th - off); }
+  return [tx, ty + 1.2];
+}
+const C3 = (() => {
   const hookLine = mkLine(4, lineMat.wire); scene.add(hookLine);
   const slings = mkLine(4, lineMat.wire); scene.add(slings);
   const hook = new THREE.Group(); scene.add(hook);
   const hb = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.2, 1), mat.crane); hb.position.y = 1.1; hb.castShadow = true; hook.add(hb);
   const ball = new THREE.Mesh(new THREE.SphereGeometry(.55, 12, 8), mat.dark); ball.position.y = -.2; hook.add(ball);
-  const ringPts = []; for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI * 2; ringPts.push(new THREE.Vector3(Math.cos(a) * MAXR, .12, Math.sin(a) * MAXR)); }
-  const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(ringPts), lineMat.ring); root.add(ring);
+  const ringPts = []; for (let i = 0; i <= 120; i++) { const a = i / 120 * Math.PI * 2; ringPts.push(new THREE.Vector3(Math.cos(a), .12, Math.sin(a))); }
+  const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(ringPts), lineMat.ring); craneRoot.add(ring);
   const radLine = mkLine(2, lineMat.radius); scene.add(radLine);
-  return { root, lower, house, boom, pendant, hookLine, slings, hook, ring, radLine, hp: new THREE.Vector3(), tip: new THREE.Vector3() };
+  const pad = new THREE.Group(); scene.add(pad);
+  box(pad, 32, .2, 72, 0, .1, 0, mat.pad);
+  [-28, -17, -6, 6, 17, 28].forEach(z => box(pad, 28, .6, .8, 0, .4, z, mat.pad));
+  return { hookLine, slings, hook, ring, radLine, pad, hp: new THREE.Vector3(), tip: new THREE.Vector3() };
 })();
+function rig() { return RIGS[craneType] || (RIGS[craneType] = buildRig(craneType)); }
+function setCraneType(key) {
+  if (!TYPES[key]) key = 'luffer';
+  craneType = key; rig();
+  for (const k in RIGS) RIGS[k].root.visible = k === key;
+  C3.ring.scale.set(maxRad(), 1, maxRad());
+  $('craneSel').value = key;
+  $('foot').textContent = `Radius is from the crane's center of rotation to the piece's center of gravity. Chart is a made-up example sized for a ${CT().label} crane (${minRad()}–${maxRad()} ft), with 250 lb of rigging added to every pick. It is not the manufacturer's chart and not for lift planning.`;
+}
+let layAt = null;   // null = auto, beside the crane
 function laydown() {
+  if (layAt) return layAt;
   let ux = -crane.x, uz = -crane.z; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
-  return { x: crane.x - uz * 30 - ux * 8, z: crane.z + ux * 30 - uz * 8 };
+  return { x: crane.x - uz * 44 - ux * 8, z: crane.z + ux * 44 - uz * 8 };
+}
+function yard() {
+  const L = laydown(), vx = L.x - crane.x, vz = L.z - crane.z, l = Math.hypot(vx, vz) || 1, ux = vx / l, uz = vz / l;
+  return { L, ux, uz, tx: -uz, tz: ux, yaw: Math.atan2(-uz, ux) };
 }
 function placeCrane() {
-  C3.root.position.set(crane.x, 0, crane.z);
-  C3.lower.rotation.y = Math.atan2(crane.z, -crane.x);
+  craneRoot.position.set(crane.x, 0, crane.z);
+  for (const k in RIGS) RIGS[k].lower.rotation.y = Math.atan2(crane.z, -crane.x);
+  const Y = yard(); C3.pad.position.set(Y.L.x, 0, Y.L.z); C3.pad.rotation.y = Y.yaw;
+  LBL.lay && (LBL.lay.dataset.p = [Y.L.x, 1, Y.L.z].join(','));
+}
+// where a piece sits in the laydown yard before it is picked; slot 0 is the top of the pile
+function yardPose(m, slot, n) {
+  const Y = yard(), across = (slot % 9 - 4) * 3, along = (Math.floor(slot / 9) % 2 - .5) * 34, layer = Math.floor(slot / 18);
+  const lie = m.kind !== 'gir' && m.kind !== 'bm';
+  n.position.set(Y.L.x + Y.ux * across + Y.tx * along, restY(m) + layer * 2.2, Y.L.z + Y.uz * across + Y.tz * along);
+  n.rotation.set(0, m.kind === 'col' ? Y.yaw + Math.PI / 2 : Y.yaw, lie ? Math.PI / 2 : 0);
 }
 const tmpV = new THREE.Vector3();
 function setHook(hp) {
   C3.hp.copy(hp);
-  const dx = hp.x - crane.x, dz = hp.z - crane.z, r = Math.max(FOOT + 8, Math.hypot(dx, dz));
-  C3.house.rotation.y = Math.atan2(-dz, dx);
-  const th = Math.acos(clamp((r - FOOT) / LB, .05, .995));
-  C3.boom.rotation.z = th;
-  const tipL = new THREE.Vector3(FOOT + LB * Math.cos(th), FOOTY + LB * Math.sin(th) + 1.4, 0);
-  const pa = C3.pendant.geometry.attributes.position; pa.setXYZ(0, -6, 17, 0); pa.setXYZ(1, tipL.x, tipL.y, 0); pa.needsUpdate = true;
-  C3.house.updateMatrixWorld(true);
-  C3.tip.copy(tipL); C3.house.localToWorld(C3.tip);
+  const R = rig(), [tx, ty] = aim(R, hp);
+  R.house.updateMatrixWorld(true);
+  C3.tip.set(tx, ty, 0); R.house.localToWorld(C3.tip);
   const ha = C3.hookLine.geometry.attributes.position;
   ha.setXYZ(0, C3.tip.x - .3, C3.tip.y, C3.tip.z); ha.setXYZ(1, hp.x - .3, hp.y + 2.2, hp.z);
   ha.setXYZ(2, C3.tip.x + .3, C3.tip.y, C3.tip.z); ha.setXYZ(3, hp.x + .3, hp.y + 2.2, hp.z); ha.needsUpdate = true;
@@ -496,20 +647,23 @@ function hookFor(m, out) {
   else { out.copy(n.position); out.y += (isHz(m) ? m.dv / 2 : m.h / 2) + 8; }
   return out;
 }
-const idleHook = () => { const L = laydown(); return new THREE.Vector3(L.x, 14, L.z); };
+const idleHook = () => { const L = laydown(); return new THREE.Vector3(L.x, 16, L.z); };
 const clearY = m => m.kind === 'col' ? 51 : isHz(m) ? 37 + m.dv / 2 : 37 + m.h / 2;
 const restY = m => m.kind === 'col' ? COLV / 2 + .4 : isHz(m) ? m.dv / 2 + .5 : .6;
 
-function flight(m, u) {
-  const n = NODES[m.id], L = laydown();
+const wrapPi = a => a - Math.PI * Math.round(a / Math.PI);
+function flight(m, u, slot) {
+  const n = NODES[m.id];
+  yardPose(m, slot, n);
+  const P0x = n.position.x, P0z = n.position.z, yL = n.position.y, yawY = n.rotation.y, tilt0 = n.rotation.z;
   const aT = Math.atan2(m.z - crane.z, m.x - crane.x), rT = Math.hypot(m.x - crane.x, m.z - crane.z);
-  const aL = Math.atan2(L.z - crane.z, L.x - crane.x), rL = Math.hypot(L.x - crane.x, L.z - crane.z);
-  const dA = wrap(aT - aL), yawL = m.yaw + dA, lies = m.kind !== 'bm' && m.kind !== 'gir';
-  let a = aL, r = rL, y, yaw = yawL, tilt = 0;
-  const yL = restY(m), Hc = clearY(m);
-  if (u < .25) { const s = ease(u / .25); y = lerp(yL, Hc, s); tilt = lies ? (Math.PI / 2) * (1 - ease(clamp(u / .2, 0, 1))) : 0; }
-  else if (u < .7) { const s = ease((u - .25) / .45); a = aL + dA * s; r = lerp(rL, rT, s); y = Hc; yaw = yawL - dA * s; }
-  else { const s = ease(clamp((u - .7) / .2, 0, 1)); a = aT; r = rT; y = lerp(Hc, m.y, s); yaw = m.yaw; }
+  const aL = Math.atan2(P0z - crane.z, P0x - crane.x), rL = Math.hypot(P0x - crane.x, P0z - crane.z);
+  const dA = wrap(aT - aL), corr = wrapPi(m.yaw - (yawY - dA)), yEnd = yawY - dA + corr;
+  let a = aL, r = rL, y, yaw = yawY, tilt = 0;
+  const Hc = clearY(m);
+  if (u < .25) { const s = ease(u / .25); y = lerp(yL, Hc, s); tilt = tilt0 * (1 - ease(clamp(u / .2, 0, 1))); }
+  else if (u < .7) { const s = ease((u - .25) / .45); a = aL + dA * s; r = lerp(rL, rT, s); y = Hc; yaw = yawY - dA * s + corr * s; }
+  else { const s = ease(clamp((u - .7) / .2, 0, 1)); a = aT; r = rT; y = lerp(Hc, m.y, s); yaw = yEnd; }
   n.position.set(crane.x + r * Math.cos(a), y, crane.z + r * Math.sin(a));
   n.rotation.set(0, yaw, tilt);
   const hp = hookFor(m, new THREE.Vector3());
@@ -525,6 +679,7 @@ LETS.forEach((L, j) => { mkLabel('gL' + L, 'bub', L).dataset.p = [sx(-16), 0, sz
 NUMS.forEach((N, i) => mkLabel('gN' + N, 'bub', N).dataset.p = [sx(GX[i]), 0, sz(76)].join(','));
 FRAMES.forEach(f => { const a = M[f.cols[0]], b = M[f.cols[1]]; mkLabel('bf' + f.n, 'bf', 'BF').dataset.p = [(a.x + b.x) / 2, 33.5, (a.z + b.z) / 2].join(','); });
 mkLabel('rad', 'rad', '');
+mkLabel('lay', 'bf', 'LAYDOWN');
 const pv = new THREE.Vector3();
 let vw = 1, vh = 1;
 function put(el, x, y, z) {
@@ -536,7 +691,7 @@ function labelTop(m) { return m.kind === 'col' ? [m.x, 32.4, m.z] : isHz(m) ? [m
 
 /* ---------------- UI ---------------- */
 const listEl = $('list');
-function save() { try { localStorage.setItem('pickbuilder.v1', JSON.stringify({ seq, crane, sample })); } catch (e) {} }
+function save() { try { localStorage.setItem('pickbuilder.v1', JSON.stringify({ v2: true, seq, crane, sample, craneType, layAt })); } catch (e) {} }
 function load() { try { const d = JSON.parse(localStorage.getItem('pickbuilder.v1') || 'null'); if (d && Array.isArray(d.seq)) return d; } catch (e) {} return null; }
 function sanitize(s) { const set = new Set(), out = []; for (const id of s || []) { const m = M[id]; if (m && ready(m, set)) { out.push(id); set.add(id); } } return out; }
 
@@ -547,7 +702,7 @@ function changed() {
 function renderStats() {
   const n = seq.length, rows = EV.rows;
   $('sPicks').innerHTML = `${n}<small>/ ${LIST.length}</small>`;
-  const flags = rows.reduce((s, r) => s + r.flags.filter(f => f[0] !== 'note').length, 0);
+  const flags = rows.reduce((s, r) => s + r.flags.filter(f => f[0] !== 'note').length, 0) + (n && (!isFinite(EV.lay.pct) || EV.lay.pct >= 85) ? 1 : 0);
   $('sFlags').textContent = flags;
   const peak = rows.reduce((s, r) => Math.max(s, r.pct), 0);
   $('sPeak').textContent = isFinite(peak) ? Math.round(peak) + '%' : 'Off';
@@ -556,12 +711,15 @@ function renderStats() {
   $('coreDot').className = 'dot' + (ok ? ' ok' : '');
   $('coreTxt').textContent = ok ? `Braced core ${EV.coreBox.name} plumbed up at pick ${EV.coreAt + 1}` : 'Braced core not plumbed up yet';
   $('sampleTag').hidden = !sample;
+  const L = EV.lay, lb = !isFinite(L.pct) || L.pct > 100, lw = !lb && L.pct >= 85;
+  $('layDot').className = 'dot ' + (lb ? 'bad' : lw ? 'warn' : 'ok');
+  $('layTxt').textContent = `Laydown ${layAt ? 'set' : 'beside the crane'} at ${Math.round(L.r)} ft` + (!isFinite(L.pct) ? (L.r < minRad() ? `, inside the ${minRad()} ft minimum radius. Move it out.` : ', past the end of the chart. Move it in.') : n ? `, heaviest shakeout pick ${Math.round(L.pct)}% of chart` : '');
   $('aUndo').disabled = !n && !cleared; $('aUndo').textContent = !n && cleared ? 'Restore' : 'Undo';
   $('aClear').disabled = !n; $('aCopy').disabled = !n;
 }
 function renderList() {
   if (!seq.length) {
-    listEl.innerHTML = `<li class="empty"><b>No picks yet.</b> Start at a braced bay: the boxes at grid A–B / 2–3 and B–C / 2–3 carry the braced frames, marked BF. Click a column there to make it pick 1, then keep clicking pieces in the order you would set them. Hit <b>Suggest a sequence</b> to see one worked out, or <b>Move crane</b> to try a new setup.</li>`;
+    listEl.innerHTML = `<li class="empty"><b>No picks yet.</b> Start at a braced bay: the boxes at grid A–B / 2–3 and B–C / 2–3 carry the braced frames, marked BF. Take the one farthest from the crane, then hang far to near. Anything that reaches over set steel gets flagged. Hit <b>Suggest a sequence</b> to see one worked out, or <b>Move crane</b> to try a new setup.</li>`;
     return;
   }
   listEl.innerHTML = EV.rows.map((r, i) => {
@@ -589,13 +747,15 @@ let flashId = null, flashT = 0;
 
 function setHint() {
   const h = $('hint');
-  if (placing) h.innerHTML = '<b>Move the crane.</b> Click the ground to set it up. The yellow ring is the 130 ft end of the chart. Esc cancels.';
+  if (placing === 'crane') h.innerHTML = `<b>Move the crane.</b> Click the ground to set it up. The yellow ring is the ${maxRad()} ft end of the chart. Esc cancels.`;
+  else if (placing === 'lay') h.innerHTML = '<b>Move the laydown.</b> Click the ground where the steel gets shaken out. Keep it inside the ring. Esc cancels.';
   else if (mode === 'play') h.innerHTML = seq.length ? '<b>Playback.</b> Drag to orbit, scroll or pinch to zoom. Click a row in the pick list to jump to it.' : '<b>Nothing to play yet.</b> Switch to Build and pick some steel, or hit Suggest a sequence.';
-  else if (!seq.length) h.innerHTML = '<b>Start at a braced bay.</b> Click a column in a box marked BF to make it pick 1.';
+  else if (!seq.length) h.innerHTML = '<b>Start at a braced bay.</b> Take the one farthest from the crane, marked BF, and hang far to near so you never reach over set steel.';
   else h.innerHTML = '<b>Click a gray piece to set it next.</b> Pieces only light up once both their columns are standing. Click the last piece again to undo it.';
 }
 function setMode(m) {
-  mode = m; placing = false; $('bCrane').setAttribute('aria-pressed', 'false');
+  if (placing) cancelPlace();
+  mode = m;
   $('mBuild').setAttribute('aria-pressed', String(m === 'build')); $('mPlay').setAttribute('aria-pressed', String(m === 'play'));
   $('player').hidden = m !== 'play'; $('legend').hidden = m !== 'build'; $('tip').hidden = true; hoverId = null;
   if (m === 'play') { if (playT >= seq.length) playT = 0; playing = seq.length > 0 && !reduce; syncScrub(); }
@@ -605,12 +765,21 @@ function setMode(m) {
 $('mBuild').onclick = () => setMode('build');
 $('mPlay').onclick = () => setMode('play');
 $('bNums').onclick = () => { showNums = !showNums; $('bNums').setAttribute('aria-pressed', String(showNums)); };
-let placing = false, craneBefore = null;
-$('bCrane').onclick = () => {
-  if (placing) { crane = craneBefore; placeCrane(); placing = false; }
-  else { if (mode === 'play') setMode('build'); placing = true; craneBefore = { ...crane }; }
-  $('bCrane').setAttribute('aria-pressed', String(placing)); setHint();
-};
+let placing = false, before = null;
+function syncPlaceBtns() { $('bCrane').setAttribute('aria-pressed', String(placing === 'crane')); $('bLay').setAttribute('aria-pressed', String(placing === 'lay')); $('bLayAuto').hidden = !layAt; setHint(); }
+function cancelPlace() { if (placing === 'crane') crane = before; if (placing === 'lay') layAt = before; placing = false; placeCrane(); syncPlaceBtns(); }
+function beginPlace(kind) {
+  if (placing === kind) { cancelPlace(); return; }
+  if (placing) cancelPlace();
+  if (mode === 'play') setMode('build');
+  placing = kind; before = kind === 'crane' ? { ...crane } : layAt && { ...layAt }; syncPlaceBtns();
+}
+$('bCrane').onclick = () => beginPlace('crane');
+$('bLay').onclick = () => beginPlace('lay');
+$('bLayAuto').onclick = () => { if (placing) cancelPlace(); layAt = null; placeCrane(); syncPlaceBtns(); changed(); };
+const sel = $('craneSel');
+sel.innerHTML = Object.entries(TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
+sel.addEventListener('change', () => { setCraneType(sel.value); placeCrane(); changed(); setHint(); });
 $('aUndo').onclick = () => {
   if (!seq.length && cleared) { seq = cleared.seq; sample = cleared.sample; cleared = null; }
   else if (seq.length) { seq.pop(); sample = false; cleared = null; }
@@ -619,7 +788,7 @@ $('aUndo').onclick = () => {
 $('aClear').onclick = () => { if (!seq.length) return; cleared = { seq: seq.slice(), sample }; seq = []; sample = false; playT = 0; changed(); setHint(); };
 $('aSuggest').onclick = () => { cleared = seq.length ? { seq: seq.slice(), sample } : cleared; seq = suggest(); sample = true; playT = 0; changed(); setHint(); };
 $('aCopy').onclick = () => {
-  const txt = ['Pick  Piece      Description                     Lb     Radius  Chart', ...EV.rows.map((r, i) =>
+  const txt = [`Crane: ${CT().label}, laydown at ${Math.round(EV.lay.r)} ft`, 'Pick  Piece      Description                     Lb     Radius  Chart', ...EV.rows.map((r, i) =>
     `${String(i + 1).padStart(4)}  ${r.m.id.padEnd(9)}  ${describe(r.m).padEnd(30)}  ${fmt(r.m.wt).padStart(5)}  ${String(Math.round(r.r)).padStart(4)} ft  ${isFinite(r.pct) ? Math.round(r.pct) + '%' : 'off'}${r.flags.length ? '  ! ' + r.flags.map(f => f[1]).join(' / ') : ''}`)].join('\n');
   const b = $('aCopy'), done = t => { b.textContent = t; setTimeout(() => b.textContent = 'Copy list', 1600); };
   try { navigator.clipboard.writeText(txt).then(() => done('Copied'), () => done('Copy blocked')); } catch (e) { done('Copy blocked'); }
@@ -656,7 +825,8 @@ const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), gPlane = new THREE
 let hoverId = null, down = null, ptr = { x: 0, y: 0 };
 function setNdc(e) { const b = renderer.domElement.getBoundingClientRect(); ptr = { x: e.clientX - b.left, y: e.clientY - b.top }; ndc.set(ptr.x / b.width * 2 - 1, -(ptr.y / b.height) * 2 + 1); ray.setFromCamera(ndc, camera); }
 function pickHit() { const h = ray.intersectObjects(HITS, false); return h.length ? h[0].object.userData.id : null; }
-function validCrane(x, z) { return !(x > -74 && x < 74 && z > -44 && z < 44) && Math.hypot(x, z) < 260; }
+function validCrane(x, z) { return !(x > -74 && x < 74 && z > -44 && z < 44) && Math.hypot(x, z) < 260 && (!layAt || Math.hypot(x - layAt.x, z - layAt.z) > 30); }
+function validLay(x, z) { return !(x > -78 && x < 78 && z > -50 && z < 50) && Math.hypot(x - crane.x, z - crane.z) > 30 && Math.hypot(x, z) < 300; }
 function updateHover() {
   const tip = $('tip');
   if (mode !== 'build' || placing) { hoverId = null; tip.hidden = true; return; }
@@ -674,7 +844,7 @@ function updateHover() {
 const cv = renderer.domElement;
 cv.addEventListener('pointermove', e => {
   setNdc(e);
-  if (placing) { const p = new THREE.Vector3(); if (ray.ray.intersectPlane(gPlane, p) && validCrane(p.x, p.z)) { crane = { x: p.x, z: p.z }; placeCrane(); } return; }
+  if (placing) { const p = new THREE.Vector3(); if (ray.ray.intersectPlane(gPlane, p) && (placing === 'crane' ? validCrane(p.x, p.z) : validLay(p.x, p.z))) { if (placing === 'crane') crane = { x: p.x, z: p.z }; else layAt = { x: p.x, z: p.z }; placeCrane(); } return; }
   if (e.pointerType === 'mouse' && !e.buttons) updateHover();
 });
 cv.addEventListener('pointerleave', () => { $('tip').hidden = true; hoverId = null; });
@@ -684,7 +854,8 @@ cv.addEventListener('pointerup', e => {
   down = null; setNdc(e);
   if (placing) {
     const p = new THREE.Vector3();
-    if (ray.ray.intersectPlane(gPlane, p) && validCrane(p.x, p.z)) { crane = { x: Math.round(p.x), z: Math.round(p.z) }; placeCrane(); placing = false; $('bCrane').setAttribute('aria-pressed', 'false'); setHint(); changed(); }
+    const ok = ray.ray.intersectPlane(gPlane, p) && (placing === 'crane' ? validCrane(p.x, p.z) : validLay(p.x, p.z));
+    if (ok) { if (placing === 'crane') crane = { x: Math.round(p.x), z: Math.round(p.z) }; else layAt = { x: Math.round(p.x), z: Math.round(p.z) }; placing = false; placeCrane(); syncPlaceBtns(); changed(); }
     return;
   }
   if (mode !== 'build') return;
@@ -697,7 +868,7 @@ cv.addEventListener('pointerup', e => {
 });
 addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('input,select')) return;
-  if (e.key === 'Escape' && placing) { $('bCrane').click(); }
+  if (e.key === 'Escape' && placing) cancelPlace();
   else if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && mode === 'build') { e.preventDefault(); $('aUndo').click(); }
   else if (e.key === ' ' && mode === 'play' && e.target === document.body) { e.preventDefault(); $('pPlay').click(); }
   else if (mode === 'play' && e.key === 'ArrowRight' && e.target === document.body) $('pNext').click();
@@ -726,9 +897,9 @@ function frame(now) {
       if (i === undefined) { finalPose(m); look(m, mat.future); NODES[m.id].visible = false; }
       else if (i < k) { finalPose(m); look(m, mat.set); }
       else if (i === k && k < N) { flying = m; look(m, mat.fly); }
-      else { finalPose(m); look(m, mat.future); }
+      else { yardPose(m, N - 1 - i, NODES[m.id]); look(m, mat.set); }
     }
-    if (flying) flight(flying, u); else { setHook(idleHook()); C3.slings.visible = false; }
+    if (flying) flight(flying, u, N - 1 - k); else { setHook(idleHook()); C3.slings.visible = false; }
     curHook.copy(C3.hp);
     readout();
   } else {
@@ -753,7 +924,7 @@ function frame(now) {
     a.setXYZ(0, crane.x, .25, crane.z); a.setXYZ(1, m.x, .25, m.z); a.needsUpdate = true; C3.radLine.visible = true;
     rl.textContent = `R ${Math.round(radiusOf(m))} ft`; put(rl, (crane.x + m.x) / 2, .5, (crane.z + m.z) / 2);
   } else { C3.radLine.visible = false; rl.hidden = true; }
-  C3.ring.visible = placing || (mode === 'build' && !!hoverId);
+  C3.ring.visible = !!placing || (mode === 'build' && !!hoverId);
   // labels
   const showN = showNums;
   for (const m of LIST) {
@@ -767,6 +938,7 @@ function frame(now) {
   for (const key in LBL) {
     const el = LBL[key]; if (!el.dataset.p) continue;
     if (key.startsWith('bf') && mode !== 'build') { el.hidden = true; continue; }
+    if (key === 'lay' && !seq.length && mode === 'play') { el.hidden = true; continue; }
     const p = el.dataset.p.split(',').map(Number); put(el, p[0], p[1], p[2]);
   }
   markRow();
@@ -779,9 +951,14 @@ function start(data) {
   const saved = data && Array.isArray(data.seq) ? data : load();
   if (saved) {
     seq = sanitize(saved.seq); sample = !!saved.sample;
+    if (saved.layAt && isFinite(+saved.layAt.x)) layAt = { x: +saved.layAt.x, z: +saved.layAt.z };
     if (saved.crane && validCrane(+saved.crane.x, +saved.crane.z)) crane = { x: +saved.crane.x, z: +saved.crane.z };
-  } else { seq = suggest(); sample = true; }
-  placeCrane(); applyTheme(); resize();
+    if (saved.craneType) craneType = saved.craneType;
+    if (saved.v2 !== true && saved.sample) saved.reseq = true;
+  }
+  setCraneType(craneType);
+  if (!saved || saved.reseq) { seq = suggest(); sample = true; }
+  placeCrane(); syncPlaceBtns(); applyTheme(); resize();
   if (camera.aspect < .9) { camera.position.set(-250, 200, -320); controls.update(); }
   evaluate(); renderList(); renderStats();
   const startMode = data && data.mode ? data.mode : (saved ? 'build' : 'play');
@@ -793,7 +970,7 @@ function start(data) {
 new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
 const hot = window.claude && window.claude.hot;
-if (hot && hot.snapshot) hot.snapshot(() => ({ seq, crane, sample, mode, playT }));
+if (hot && hot.snapshot) hot.snapshot(() => ({ v2: true, seq, crane, sample, mode, playT, craneType, layAt }));
 if (hot && hot.ready) hot.ready(start); else start(hot && hot.data);
 })();
 </script>
