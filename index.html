@@ -234,7 +234,8 @@ const TYPES = {
   rt: { label: 'Grove RT class · rough terrain', base: 'rt', boom: 'tele', Lmin: 38, Lmax: 142,
     chart: [[10, 90000], [20, 52000], [30, 33000], [40, 23000], [50, 16500], [60, 12000], [70, 9000], [80, 7000], [90, 5400], [100, 4200], [110, 3200], [120, 2400]] }
 };
-let craneType = 'luffer';
+const ENABLED = ['lattice'];   // main boom only for now. Add keys from TYPES here to bring the other cranes back
+let craneType = ENABLED[0];
 const CT = () => TYPES[craneType];
 const minRad = () => CT().chart[0][0];
 const maxRad = () => CT().chart[CT().chart.length - 1][0];
@@ -592,7 +593,7 @@ const C3 = (() => {
 })();
 function rig() { return RIGS[craneType] || (RIGS[craneType] = buildRig(craneType)); }
 function setCraneType(key) {
-  if (!TYPES[key]) key = 'luffer';
+  if (!TYPES[key] || !ENABLED.includes(key)) key = ENABLED[0];
   craneType = key; rig();
   for (const k in RIGS) RIGS[k].root.visible = k === key;
   C3.ring.scale.set(maxRad(), 1, maxRad());
@@ -778,7 +779,8 @@ $('bCrane').onclick = () => beginPlace('crane');
 $('bLay').onclick = () => beginPlace('lay');
 $('bLayAuto').onclick = () => { if (placing) cancelPlace(); layAt = null; placeCrane(); syncPlaceBtns(); changed(); };
 const sel = $('craneSel');
-sel.innerHTML = Object.entries(TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
+sel.closest('.cranesel').hidden = ENABLED.length < 2;
+sel.innerHTML = Object.entries(TYPES).filter(([k]) => ENABLED.includes(k)).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
 sel.addEventListener('change', () => { setCraneType(sel.value); placeCrane(); changed(); setHint(); });
 $('aUndo').onclick = () => {
   if (!seq.length && cleared) { seq = cleared.seq; sample = cleared.sample; cleared = null; }
