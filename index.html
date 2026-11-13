@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pick Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* layout: one-screen tool. Header bar, 3D erection view on the left, the pick sheet on the right; stacks on phones */
+:root{
+  --bg:#e6e9ea; --panel:#f4f5f5; --raised:#ffffff; --ink:#1b2125; --ink-2:#56626a; --line:#cbd2d5;
+  --primer:#a4462c; --hivis:#d6a10f; --hivis-ink:#7a5a00; --scene:#dce1e3; --ground:#c9cfcc; --grid:#8f9a9e;
+  --ghost:#5f6b73; --warn:#a35a05; --bad:#b0281f; --ok:#2e7a4d;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Barlow","Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121619; --panel:#192024; --raised:#20282d; --ink:#e3e8ea; --ink-2:#97a3a9; --line:#2d363c;
+  --primer:#c75b3c; --hivis:#f0b92a; --hivis-ink:#f0b92a; --scene:#161c20; --ground:#222a2e; --grid:#46535a;
+  --ghost:#9aa6ad; --warn:#e5953a; --bad:#f0675b; --ok:#5cb683; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121619; --panel:#192024; --raised:#20282d; --ink:#e3e8ea; --ink-2:#97a3a9; --line:#2d363c;
+  --primer:#c75b3c; --hivis:#f0b92a; --hivis-ink:#f0b92a; --scene:#161c20; --ground:#222a2e; --grid:#46535a;
+  --ghost:#9aa6ad; --warn:#e5953a; --bad:#f0675b; --ok:#5cb683; color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.4 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 14px;
+  display:flex;flex-direction:column;gap:10px;overflow:hidden}
+button,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--hivis);outline-offset:2px}
+
+.bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;flex:0 0 auto}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0}
+.brand h1{margin:0;font:700 26px/1 var(--display);letter-spacing:.02em;text-transform:uppercase}
+.brand span{font:600 12px/1 var(--display);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:5px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:none;padding:7px 16px;font:700 14px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+
+.app{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:12px}
+.stage{position:relative;min-width:0;min-height:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--scene)}
+.stage canvas{display:block;width:100%;height:100%;touch-action:none}
+.labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lb{position:absolute;left:0;top:0;transform:translate(-50%,-50%);font:500 10px/1 var(--mono);padding:2px 3px;border-radius:2px;
+  background:var(--raised);color:var(--ink);border:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+.lb.last{background:var(--hivis);color:#1b2125;border-color:var(--hivis)}
+.lb.bub{font:700 12px/1 var(--display);width:22px;height:22px;display:grid;place-items:center;border-radius:50%;padding:0;background:var(--panel);color:var(--ink-2)}
+.lb.bf{font:700 10px/1 var(--display);letter-spacing:.1em;background:none;border:1px dashed var(--hivis-ink);color:var(--hivis-ink)}
+.lb.rad{font:500 11px/1.1 var(--mono);background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+.tools{position:absolute;left:10px;top:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;pointer-events:none}
+.tools > *{pointer-events:auto}
+.hint{background:var(--raised);border:1px solid var(--line);border-radius:5px;padding:7px 10px;font-size:13px;line-height:1.3;max-width:340px;color:var(--ink)}
+.hint b{font-weight:600}
+.chipbtn{border:1px solid var(--line);background:var(--raised);border-radius:5px;padding:6px 10px;font:600 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase}
+.chipbtn[aria-pressed="true"]{border-color:var(--hivis);box-shadow:inset 0 0 0 1px var(--hivis)}
+.legend{display:flex;gap:10px;align-items:center;background:var(--raised);border:1px solid var(--line);border-radius:5px;padding:6px 10px;font-size:12px;color:var(--ink-2)}
+.legend i{display:inline-block;width:14px;height:5px;border-radius:1px;margin-right:5px;vertical-align:middle}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);border-radius:4px;padding:7px 9px;font-size:12.5px;line-height:1.35;max-width:240px;transform:translate(14px,14px);z-index:3}
+.tip b{font:500 12px/1 var(--mono)}
+.tip .need{color:var(--hivis)}
+
+.player{position:absolute;left:10px;right:10px;bottom:10px;background:var(--raised);border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:grid;gap:6px}
+.prow{display:flex;align-items:center;gap:6px}
+.pbtn{width:34px;height:30px;border:1px solid var(--line);border-radius:4px;background:var(--panel);display:grid;place-items:center;padding:0;flex:0 0 auto}
+.pbtn svg{width:14px;height:14px;fill:var(--ink)}
+.pbtn.main{background:var(--ink);border-color:var(--ink)} .pbtn.main svg{fill:var(--bg)}
+#scrub{flex:1;min-width:60px;accent-color:var(--primer)}
+#speed{border:1px solid var(--line);border-radius:4px;background:var(--panel);padding:4px 4px;font:500 12px var(--mono)}
+.readout{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;font-size:13px;min-height:19px}
+.readout .k{font:700 15px/1 var(--display);letter-spacing:.06em;text-transform:uppercase}
+.readout .m{font:500 13px/1 var(--mono)}
+.readout .f{font-size:12.5px}
+
+.panel{min-width:0;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+.stat{padding:9px 10px 8px;border-right:1px solid var(--line);min-width:0}
+.stat:last-child{border-right:0}
+.stat b{display:block;font:600 10.5px/1 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.stat span{display:block;margin-top:4px;font:700 22px/1 var(--display);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat span small{font:600 12px var(--display);color:var(--ink-2);margin-left:2px}
+.core{padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px;display:flex;gap:8px;align-items:center}
+.dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--ink-2)}
+.dot.ok{background:var(--ok)}
+.acts{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.act{border:1px solid var(--line);background:var(--raised);border-radius:4px;padding:6px 10px;font:600 12.5px/1 var(--display);letter-spacing:.1em;text-transform:uppercase}
+.act.pri{background:var(--primer);border-color:var(--primer);color:#fff}
+.act:disabled{opacity:.45;cursor:default}
+.listhead{display:grid;grid-template-columns:26px minmax(0,1fr) 54px 40px 62px;gap:6px;padding:6px 12px;font:600 10.5px/1 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);border-bottom:1px solid var(--line)}
+.listhead .r,.row .r{text-align:right}
+ol.picks{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1 1 auto;min-height:0}
+.row{display:grid;grid-template-columns:26px minmax(0,1fr) 54px 40px 62px;gap:6px;padding:6px 12px;border-bottom:1px solid var(--line);align-items:center;cursor:pointer;font-variant-numeric:tabular-nums}
+.row:hover{background:var(--raised)}
+.row.on{background:var(--raised);box-shadow:inset 3px 0 0 var(--primer)}
+.row .n{font:500 12px/1 var(--mono);color:var(--ink-2)}
+.row .mk{min-width:0}
+.row .mk b{display:block;font:500 12.5px/1.2 var(--mono)}
+.row .mk span{display:block;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .wt,.row .rr{font:500 12px/1 var(--mono)}
+.pct{position:relative;height:18px;border-radius:2px;background:var(--bg);overflow:hidden}
+.pct i{position:absolute;left:0;top:0;bottom:0;background:var(--ok);opacity:.35}
+.pct.w i{background:var(--warn);opacity:.45} .pct.x i{background:var(--bad);opacity:.5}
+.pct em{position:relative;font:500 11px/18px var(--mono);font-style:normal;padding-left:4px}
+.row .fl{grid-column:2 / -1;display:grid;gap:2px}
+.fl p{margin:0;font-size:12px;line-height:1.3;padding-left:9px;position:relative}
+.fl p::before{content:"";position:absolute;left:0;top:5px;width:5px;height:5px;border-radius:1px;background:var(--ink-2)}
+.fl p.warn{color:var(--warn)} .fl p.warn::before{background:var(--warn)}
+.fl p.bad{color:var(--bad)} .fl p.bad::before{background:var(--bad)}
+.fl p.note{color:var(--ink-2)}
+.empty{padding:18px 14px;color:var(--ink-2);font-size:13.5px;line-height:1.45}
+.empty b{color:var(--ink)}
+.foot{padding:8px 12px;font-size:11.5px;line-height:1.35;color:var(--ink-2);border-top:1px solid var(--line)}
+.sample{font:600 10.5px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--hivis-ink);margin-left:auto}
+.fail{position:absolute;inset:0;display:grid;place-items:center;padding:20px;text-align:center;color:var(--ink-2)}
+
+@media (max-width:860px){
+  body{overflow:auto;height:auto;min-height:100%}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto}
+  .stage{height:68svh;min-height:420px}
+  .panel{max-height:none}
+  ol.picks{max-height:60svh}
+  .hint{max-width:100%}
+  .legend{display:none}
+}
+@media (max-width:460px){
+  .brand span{display:none}
+  .stat span{font-size:19px}
+  .listhead,.row{grid-template-columns:24px minmax(0,1fr) 48px 36px 56px;padding-left:10px;padding-right:10px}
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><h1>Pick Builder</h1><span>Steel erection sequence</span></div>
+  <div class="seg" role="group" aria-label="Mode">
+    <button type="button" id="mBuild" aria-pressed="true">Build</button>
+    <button type="button" id="mPlay" aria-pressed="false">Play</button>
+  </div>
+</header>
+
+<main class="app">
+  <section class="stage" id="stage" aria-label="3D view of the steel frame and crane">
+    <div class="labels" id="labels"></div>
+    <div class="tools" id="tools">
+      <div class="hint" id="hint"></div>
+      <button type="button" class="chipbtn" id="bCrane" aria-pressed="false">Move crane</button>
+      <button type="button" class="chipbtn" id="bNums" aria-pressed="true">Numbers</button>
+      <div class="legend" id="legend"><span><i style="background:var(--primer)"></i>Set</span><span><i style="background:var(--ghost);opacity:.6"></i>Ready to pick</span><span><i style="background:var(--ghost);opacity:.2"></i>Needs columns</span></div>
+    </div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="player" id="player" hidden>
+      <div class="prow">
+        <button type="button" class="pbtn" id="pStart" aria-label="Back to start"><svg viewBox="0 0 16 16"><path d="M2 2h2v12H2zM14 2v12L5 8z"/></svg></button>
+        <button type="button" class="pbtn" id="pPrev" aria-label="Previous pick"><svg viewBox="0 0 16 16"><path d="M9 2v12L2 8zM15 2v12L8 8z"/></svg></button>
+        <button type="button" class="pbtn main" id="pPlay" aria-label="Play"><svg viewBox="0 0 16 16" id="pIcon"><path d="M3 2v12l11-6z"/></svg></button>
+        <button type="button" class="pbtn" id="pNext" aria-label="Next pick"><svg viewBox="0 0 16 16"><path d="M7 2v12l7-6zM1 2v12l7-6z"/></svg></button>
+        <input type="range" id="scrub" min="0" max="1" step="0.001" value="0" aria-label="Scrub through the sequence">
+        <select id="speed" aria-label="Playback speed"><option value="0.5">0.5x</option><option value="1">1x</option><option value="2" selected>2x</option><option value="4">4x</option><option value="8">8x</option></select>
+      </div>
+      <div class="readout" id="readout" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <aside class="panel" aria-label="Pick list">
+    <div class="stats">
+      <div class="stat"><b>Picks</b><span id="sPicks">0</span></div>
+      <div class="stat"><b>Flags</b><span id="sFlags">0</span></div>
+      <div class="stat"><b>Peak chart</b><span id="sPeak">0%</span></div>
+      <div class="stat"><b>Max radius</b><span id="sRad">0<small>ft</small></span></div>
+    </div>
+    <div class="core"><span class="dot" id="coreDot"></span><span id="coreTxt">Braced core not plumbed up yet</span><span class="sample" id="sampleTag" hidden>Sample sequence</span></div>
+    <div class="acts">
+      <button type="button" class="act" id="aUndo">Undo</button>
+      <button type="button" class="act" id="aClear">Clear</button>
+      <button type="button" class="act" id="aSuggest">Suggest a sequence</button>
+      <button type="button" class="act" id="aCopy">Copy list</button>
+    </div>
+    <div class="listhead"><span>#</span><span>Piece</span><span class="r">Lb</span><span class="r">Rad</span><span>Chart</span></div>
+    <ol class="picks" id="list"></ol>
+    <div class="foot">Radius is from the crane's center of rotation to the piece's center of gravity. Chart is an example 140 ft boom crawler chart with 250 lb of rigging added to every pick. Illustrative only, not for lift planning.</div>
+  </aside>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (!window.THREE || !THREE.OrbitControls) { stage.insertAdjacentHTML('beforeend', '<div class="fail">The 3D library did not load. Check your connection and reload the page.</div>'); return; }
+
+/* ---------------- the job: 4 bays x 2 bays, 30 ft grid, two levels ---------------- */
+const GX = [0, 30, 60, 90, 120], GZ = [0, 30, 60], NUMS = ['1', '2', '3', '4', '5'], LETS = ['A', 'B', 'C'];
+const sx = g => g - 60, sz = g => g - 30;
+const LEV = { '2': 15, 'R': 30 };
+const VIS = 1.35;                         // section depth drawn a little heavy so it reads at site scale
+const RIG = 250;                          // rigging weight added to every pick
+const SH = {
+  'W12x65': { d: 12.1, bf: 12.0, plf: 65 }, 'W24x62': { d: 23.7, bf: 7.0, plf: 62 }, 'W21x44': { d: 20.7, bf: 6.5, plf: 44 },
+  'W18x35': { d: 17.7, bf: 6.0, plf: 35 }, 'W16x26': { d: 15.7, bf: 5.5, plf: 26 }, 'W14x22': { d: 13.7, bf: 5.0, plf: 22 }
+};
+const COLV = SH['W12x65'].d / 12 * VIS;
+const CHART = [[12, 60000], [20, 42000], [30, 27000], [40, 18500], [50, 13500], [60, 10200], [70, 7900], [80, 6200], [90, 4900], [100, 3900], [110, 3100], [120, 2500], [130, 2000]];
+const MAXR = CHART[CHART.length - 1][0];
+const LB = 140, FOOT = 5, FOOTY = 6, HOUSEY = 5;
+const KIND = { col: 'Column', gir: 'Girder', bm: 'Beam', xb: 'X-brace' };
+
+const M = {}, LIST = [];
+function add(m) { m.links = []; m.box = []; M[m.id] = m; LIST.push(m); }
+const round10 = v => Math.round(v / 10) * 10;
+LETS.forEach((L, j) => NUMS.forEach((N, i) => add({ id: `C-${L}${N}`, kind: 'col', size: 'W12x65', wt: round10(65 * 30), x: sx(GX[i]), z: sz(GZ[j]), y: 15, yaw: 0, len: 30 })));
+['2', 'R'].forEach(lv => {
+  LETS.forEach((L, j) => { for (let i = 0; i < 4; i++) {
+    const size = lv === '2' ? (L === 'B' ? 'W24x62' : 'W21x44') : (L === 'B' ? 'W21x44' : 'W18x35');
+    const dv = SH[size].d / 12 * VIS;
+    add({ id: `G${lv}-${L}${NUMS[i]}${NUMS[i + 1]}`, kind: 'gir', lev: lv, size, wt: round10(SH[size].plf * 29), dv, len: 30 - COLV,
+      cols: [`C-${L}${NUMS[i]}`, `C-${L}${NUMS[i + 1]}`], x: sx(GX[i] + 15), z: sz(GZ[j]), y: LEV[lv] - dv / 2, yaw: Math.PI / 2 });
+  } });
+  NUMS.forEach((N, i) => { for (let j = 0; j < 2; j++) {
+    const edge = N === '1' || N === '5';
+    const size = lv === '2' ? (edge ? 'W16x26' : 'W18x35') : (edge ? 'W14x22' : 'W16x26');
+    const dv = SH[size].d / 12 * VIS;
+    add({ id: `B${lv}-${N}${LETS[j]}${LETS[j + 1]}`, kind: 'bm', lev: lv, size, wt: round10(SH[size].plf * 29), dv, len: 30 - COLV,
+      cols: [`C-${LETS[j]}${N}`, `C-${LETS[j + 1]}${N}`], x: sx(GX[i]), z: sz(GZ[j] + 15), y: LEV[lv] - dv / 2, yaw: 0 });
+  } });
+});
+const FRAMES = [
+  { n: 'A23', cols: ['C-A2', 'C-A3'], yaw: Math.PI / 2 }, { n: 'C23', cols: ['C-C2', 'C-C3'], yaw: Math.PI / 2 },
+  { n: '3AB', cols: ['C-A3', 'C-B3'], yaw: 0 }, { n: '3BC', cols: ['C-B3', 'C-C3'], yaw: 0 }
+];
+[1, 2].forEach(t => FRAMES.forEach(f => {
+  const a = M[f.cols[0]], b = M[f.cols[1]];
+  add({ id: `X${t}-${f.n}`, kind: 'xb', tier: t, size: 'L4x4x3/8', wt: 700, cols: f.cols, x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, y: t === 1 ? 7.5 : 22.5, yaw: f.yaw, len: 30 - COLV, h: 14 });
+}));
+LIST.forEach(m => { if (m.cols) m.cols.forEach(c => M[c].links.push(m.id)); if (m.lev === 'R') m.twin = m.id[0] + '2' + m.id.slice(2); });
+const BOXES = [
+  { name: 'A–B / 2–3', cols: ['C-A2', 'C-A3', 'C-B2', 'C-B3'], lv: ['G?-A23', 'G?-B23', 'B?-2AB', 'B?-3AB'], br: ['X?-A23', 'X?-3AB'] },
+  { name: 'B–C / 2–3', cols: ['C-B2', 'C-B3', 'C-C2', 'C-C3'], lv: ['G?-B23', 'G?-C23', 'B?-2BC', 'B?-3BC'], br: ['X?-C23', 'X?-3BC'] }
+];
+BOXES.forEach((b, k) => {
+  b.core = [...b.cols, ...b.lv.map(s => s.replace('?', '2')), ...b.br.map(s => s.replace('?', '1'))];
+  b.all = [...b.cols, ...['2', 'R'].flatMap(l => b.lv.map(s => s.replace('?', l))), ...['1', '2'].flatMap(t => b.br.map(s => s.replace('?', t)))];
+  b.all.forEach(id => { if (!M[id].box.includes(k)) M[id].box.push(k); });
+});
+const isHz = m => m.kind === 'gir' || m.kind === 'bm';
+const describe = m => m.kind === 'xb' ? `X-brace, tier ${m.tier}` : m.kind === 'col' ? `Column ${m.size}` : `${KIND[m.kind]} ${m.size}, ${m.lev === 'R' ? 'roof' : 'level 2'}`;
+
+/* ---------------- state ---------------- */
+const DEF_CRANE = { x: 0, z: -66 };
+let seq = [], crane = { ...DEF_CRANE }, mode = 'build', playT = 0, playing = false, speed = 2, showNums = true, sample = false, cleared = null;
+let EV = { rows: [], coreAt: -1 };
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t * t * (3 - 2 * t);
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+function capacity(r) {
+  if (r <= CHART[0][0]) return CHART[0][1];
+  for (let i = 1; i < CHART.length; i++) if (r <= CHART[i][0]) { const [r0, c0] = CHART[i - 1], [r1, c1] = CHART[i]; return lerp(c0, c1, (r - r0) / (r1 - r0)); }
+  return 0;
+}
+const radiusOf = m => Math.hypot(m.x - crane.x, m.z - crane.z);
+const ready = (m, set) => !set.has(m.id) && (m.kind === 'col' || m.cols.every(c => set.has(c)));
+
+function evaluate() {
+  const set = new Set(), rows = [];
+  let coreAt = -1, coreBoxes = [];
+  for (let i = 0; i < seq.length; i++) {
+    const m = M[seq[i]], f = [];
+    if (i === 0 && !(m.kind === 'col' && m.box.length)) f.push(['warn', 'Start at a braced bay. Stand a column in one of the braced boxes first.']);
+    else if (coreAt < 0 && i > 0 && !m.box.length) f.push(['warn', 'Out of the braced bay before the core is plumbed and braced.']);
+    set.add(m.id);
+    if (isHz(m) && m.lev === 'R' && !set.has(m.twin)) f.push(['note', 'Roof piece in before the level 2 piece under it.']);
+    let justMade = false;
+    if (coreAt < 0) { coreBoxes = BOXES.filter(b => b.core.every(id => set.has(id))); if (coreBoxes.length) { coreAt = i; justMade = true; } }
+    else BOXES.forEach(b => { if (!coreBoxes.includes(b) && b.core.every(id => set.has(id))) coreBoxes.push(b); });
+    if (m.kind === 'col') {
+      const free = LIST.filter(c => c.kind === 'col' && set.has(c.id) && !c.links.some(l => set.has(l))).length;
+      if (free > 4) f.push(['warn', `${free} columns freestanding. Tie some in before you stand more.`]);
+    }
+    if (coreAt >= 0 && !justMade && isHz(m) && !tied(m.cols[0], set, coreBoxes)) f.push(['warn', 'Not tied back to the braced core.']);
+    const r = radiusOf(m), cap = capacity(r), pct = cap > 0 ? (m.wt + RIG) / cap * 100 : Infinity;
+    if (!isFinite(pct)) f.push(['bad', `Past the end of the chart at ${Math.round(r)} ft. Move the crane.`]);
+    else if (pct > 100) f.push(['bad', 'Over the chart at this radius. Move the crane closer.']);
+    else if (pct >= 85) f.push(['warn', 'Over 85% of chart. Plan it as a critical lift.']);
+    rows.push({ m, r, cap, pct, flags: f });
+  }
+  EV = { rows, coreAt, coreBox: coreAt >= 0 ? BOXES.find(b => b.core.every(id => seq.slice(0, coreAt + 1).includes(id))) : null };
+}
+function tied(colId, set, boxes) {
+  const start = new Set(boxes.flatMap(b => b.cols)), seen = new Set([colId]), q = [colId];
+  while (q.length) {
+    const c = q.shift(); if (start.has(c)) return true;
+    for (const l of M[c].links) { const mm = M[l]; if (!set.has(l) || !isHz(mm)) continue; for (const o of mm.cols) if (!seen.has(o)) { seen.add(o); q.push(o); } }
+  }
+  return false;
+}
+function suggest() {
+  const out = [], set = new Set(), put = id => { if (!set.has(id)) { out.push(id); set.add(id); } };
+  const box = BOXES[0];
+  box.cols.forEach(put);
+  box.lv.forEach(s => put(s.replace('?', '2'))); box.br.forEach(s => put(s.replace('?', '1')));
+  box.lv.forEach(s => put(s.replace('?', 'R'))); box.br.forEach(s => put(s.replace('?', '2')));
+  const cx = sx(45), cz = sz(15);
+  const pri = m => m.kind === 'xb' ? 2 + m.tier : m.lev === '2' ? 0 : 1;
+  const fill = () => LIST.filter(m => m.kind !== 'col' && ready(m, set)).sort((a, b) => pri(a) - pri(b)).forEach(m => put(m.id));
+  LIST.filter(m => m.kind === 'col' && !set.has(m.id)).sort((a, b) => Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz) || a.x - b.x)
+    .forEach(c => { put(c.id); fill(); });
+  fill();
+  return out;
+}
+
+/* ---------------- three.js scene ---------------- */
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+catch (e) { stage.insertAdjacentHTML('beforeend', '<div class="fail">This browser could not start 3D graphics (WebGL), which the pick builder needs.</div>'); return; }
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, 1, 4000);
+camera.position.set(-175, 128, -205);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(-6, 22, -14); controls.enableDamping = true; controls.dampingFactor = .08;
+controls.maxPolarAngle = Math.PI * .48; controls.minDistance = 40; controls.maxDistance = 700; controls.update();
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f8c, .75); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, .85); sun.position.set(-140, 220, -60); sun.castShadow = true;
+Object.assign(sun.shadow.camera, { left: -200, right: 200, top: 200, bottom: -200, near: 10, far: 600 });
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0005; scene.add(sun);
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#888';
+const mat = {
+  ground: new THREE.MeshStandardMaterial({ roughness: 1 }),
+  concrete: new THREE.MeshStandardMaterial({ color: 0x9c9d98, roughness: .95 }),
+  set: new THREE.MeshStandardMaterial({ roughness: .62, metalness: .15 }),
+  last: new THREE.MeshStandardMaterial({ roughness: .5, metalness: .15 }),
+  fly: new THREE.MeshStandardMaterial({ roughness: .5, metalness: .15 }),
+  hover: new THREE.MeshStandardMaterial({ roughness: .5 }),
+  ready: new THREE.MeshStandardMaterial({ transparent: true, opacity: .34, depthWrite: false, roughness: .8 }),
+  locked: new THREE.MeshStandardMaterial({ transparent: true, opacity: .09, depthWrite: false, roughness: .8 }),
+  future: new THREE.MeshStandardMaterial({ transparent: true, opacity: .07, depthWrite: false, roughness: .8 }),
+  crane: new THREE.MeshStandardMaterial({ roughness: .55, metalness: .2 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: .8 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0x24394d, roughness: .3 }),
+  hit: new THREE.MeshBasicMaterial({ visible: false })
+};
+const lineMat = { grid: new THREE.LineBasicMaterial(), lace: new THREE.LineBasicMaterial(), wire: new THREE.LineBasicMaterial({ color: 0x1d2024 }), radius: new THREE.LineBasicMaterial(), ring: new THREE.LineBasicMaterial({ transparent: true, opacity: .55 }) };
+function applyTheme() {
+  scene.background = new THREE.Color(css('--scene'));
+  mat.ground.color.set(css('--ground'));
+  const pr = new THREE.Color(css('--primer'));
+  mat.set.color.copy(pr); mat.last.color.copy(pr); mat.last.emissive.copy(pr).multiplyScalar(.35);
+  mat.fly.color.copy(pr); mat.fly.emissive.copy(pr).multiplyScalar(.2);
+  const hv = new THREE.Color(css('--hivis'));
+  mat.hover.color.copy(hv); mat.hover.emissive.copy(hv).multiplyScalar(.3); mat.crane.color.copy(hv);
+  const gh = new THREE.Color(css('--ghost'));
+  mat.ready.color.copy(gh); mat.locked.color.copy(gh); mat.future.color.copy(gh);
+  lineMat.grid.color.set(css('--grid')); lineMat.lace.color.copy(hv).multiplyScalar(.7);
+  lineMat.radius.color.set(css('--ink')); lineMat.ring.color.copy(hv);
+  const dark = document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  hemi.intensity = dark ? .55 : .75; sun.intensity = dark ? .7 : .85;
+}
+
+// ground, grid lines, piers
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), mat.ground);
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+{
+  const p = [];
+  GX.forEach(g => p.push(sx(g), .06, -50, sx(g), .06, 50));
+  GZ.forEach(g => p.push(-80, .06, sz(g), 80, .06, sz(g)));
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  scene.add(new THREE.LineSegments(geo, lineMat.grid));
+  const pg = new THREE.BoxGeometry(3.2, .5, 3.2);
+  LIST.filter(m => m.kind === 'col').forEach(c => { const b = new THREE.Mesh(pg, mat.concrete); b.position.set(c.x, .2, c.z); b.receiveShadow = true; scene.add(b); });
+}
+
+// steel
+const geoCache = {};
+function iGeom(size, len) {
+  const key = size + '|' + len.toFixed(2); if (geoCache[key]) return geoCache[key];
+  const s = SH[size], d = s.d / 12 * VIS, b = s.bf / 12 * VIS, tf = Math.max(.08, d * .075), tw = Math.max(.06, d * .045);
+  const sh = new THREE.Shape();
+  [[-b / 2, -d / 2], [b / 2, -d / 2], [b / 2, -d / 2 + tf], [tw / 2, -d / 2 + tf], [tw / 2, d / 2 - tf], [b / 2, d / 2 - tf], [b / 2, d / 2], [-b / 2, d / 2], [-b / 2, d / 2 - tf], [-tw / 2, d / 2 - tf], [-tw / 2, -d / 2 + tf], [-b / 2, -d / 2 + tf]]
+    .forEach(([x, y], i) => i ? sh.lineTo(x, y) : sh.moveTo(x, y));
+  sh.closePath();
+  const g = new THREE.ExtrudeGeometry(sh, { depth: len, bevelEnabled: false }); g.translate(0, 0, -len / 2); g.computeVertexNormals();
+  return (geoCache[key] = g);
+}
+const NODES = {}, HITS = [];
+LIST.forEach(m => {
+  const node = new THREE.Group(); node.userData.id = m.id; const vis = [];
+  if (m.kind === 'col') {
+    const mesh = new THREE.Mesh(iGeom(m.size, 30), mat.set); mesh.rotation.x = -Math.PI / 2; vis.push(mesh);
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(3, 30, 3), mat.hit); node.add(hit); HITS.push(hit); hit.userData.id = m.id;
+  } else if (isHz(m)) {
+    vis.push(new THREE.Mesh(iGeom(m.size, m.len), mat.set));
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(2.4, Math.max(2.4, m.dv + 1), m.len - 2), mat.hit); node.add(hit); HITS.push(hit); hit.userData.id = m.id;
+  } else {
+    const diag = Math.hypot(m.h, m.len), al = Math.atan2(m.h, m.len), g = new THREE.BoxGeometry(.38, .38, diag), hg = new THREE.BoxGeometry(1.6, 1.6, diag - 4);
+    [-al, al].forEach(a => {
+      const mesh = new THREE.Mesh(g, mat.set); mesh.rotation.x = a; vis.push(mesh);
+      const hit = new THREE.Mesh(hg, mat.hit); hit.rotation.x = a; node.add(hit); HITS.push(hit); hit.userData.id = m.id;
+    });
+  }
+  vis.forEach(v => { v.castShadow = true; v.receiveShadow = true; node.add(v); });
+  node.userData.vis = vis;
+  scene.add(node); NODES[m.id] = node;
+});
+function finalPose(m) { const n = NODES[m.id]; n.position.set(m.x, m.y, m.z); n.rotation.set(0, m.yaw, 0); }
+function look(m, material) { const n = NODES[m.id]; n.visible = true; for (const v of n.userData.vis) { v.material = material; v.castShadow = material === mat.set || material === mat.last || material === mat.fly || material === mat.hover; } }
+LIST.forEach(finalPose);
+
+// crane
+const C3 = (() => {
+  const root = new THREE.Group(); scene.add(root);
+  const lower = new THREE.Group(); root.add(lower);
+  const tg = new THREE.BoxGeometry(24, 3.6, 3.4);
+  [-7.2, 7.2].forEach(z => { const t = new THREE.Mesh(tg, mat.dark); t.position.set(0, 1.8, z); t.castShadow = true; lower.add(t); });
+  const car = new THREE.Mesh(new THREE.BoxGeometry(11, 2.4, 11.4), mat.dark); car.position.y = 3.4; car.castShadow = true; lower.add(car);
+  const house = new THREE.Group(); house.position.y = HOUSEY; root.add(house);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(19, 6.4, 9.6), mat.crane); body.position.set(-3.5, 3.2, 0); body.castShadow = true; house.add(body);
+  const cw = new THREE.Mesh(new THREE.BoxGeometry(4.5, 5.6, 10), mat.dark); cw.position.set(-14.6, 2.9, 0); cw.castShadow = true; house.add(cw);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(5.6, 5.4, 3.4), mat.crane); cab.position.set(4.6, 3.3, -6.6); cab.castShadow = true; house.add(cab);
+  const win = new THREE.Mesh(new THREE.BoxGeometry(.3, 2.8, 2.8), mat.glass); win.position.set(7.45, 4.2, -6.6); house.add(win);
+  const gp = [-9, 6.4, -3.4, -6, 17, 0, -9, 6.4, 3.4, -6, 17, 0, -1, 6.4, -3.4, -6, 17, 0, -1, 6.4, 3.4, -6, 17, 0];
+  const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3)); house.add(new THREE.LineSegments(gg, lineMat.wire));
+  const boom = new THREE.Group(); boom.position.set(FOOT, FOOTY, 0); house.add(boom);
+  const W2 = 1.9, cg = new THREE.BoxGeometry(LB, .42, .42);
+  [[W2, W2], [W2, -W2], [-W2, W2], [-W2, -W2]].forEach(([y, z]) => { const c = new THREE.Mesh(cg, mat.crane); c.position.set(LB / 2, y, z); c.castShadow = true; boom.add(c); });
+  const lp = [], st = 5;
+  for (let x = 0, k = 0; x < LB; x += st, k++) {
+    const x2 = Math.min(LB, x + st), s = k % 2 ? 1 : -1;
+    lp.push(x, W2, -W2 * s, x2, W2, W2 * s, x, -W2, -W2 * s, x2, -W2, W2 * s, x, -W2 * s, W2, x2, W2 * s, W2, x, -W2 * s, -W2, x2, W2 * s, -W2);
+  }
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3)); boom.add(new THREE.LineSegments(lg, lineMat.lace));
+  const head = new THREE.Mesh(new THREE.BoxGeometry(3, 3.4, 4.2), mat.crane); head.position.set(LB, 0, 0); boom.add(head);
+  const mkLine = (n, m) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); const l = new THREE.LineSegments(g, m); l.frustumCulled = false; return l; };
+  const pendant = mkLine(2, lineMat.wire); house.add(pendant);
+  const hookLine = mkLine(4, lineMat.wire); scene.add(hookLine);
+  const slings = mkLine(4, lineMat.wire); scene.add(slings);
+  const hook = new THREE.Group(); scene.add(hook);
+  const hb = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.2, 1), mat.crane); hb.position.y = 1.1; hb.castShadow = true; hook.add(hb);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(.55, 12, 8), mat.dark); ball.position.y = -.2; hook.add(ball);
+  const ringPts = []; for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI * 2; ringPts.push(new THREE.Vector3(Math.cos(a) * MAXR, .12, Math.sin(a) * MAXR)); }
+  const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(ringPts), lineMat.ring); root.add(ring);
+  const radLine = mkLine(2, lineMat.radius); scene.add(radLine);
+  return { root, lower, house, boom, pendant, hookLine, slings, hook, ring, radLine, hp: new THREE.Vector3(), tip: new THREE.Vector3() };
+})();
+function laydown() {
+  let ux = -crane.x, uz = -crane.z; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+  return { x: crane.x - uz * 30 - ux * 8, z: crane.z + ux * 30 - uz * 8 };
+}
+function placeCrane() {
+  C3.root.position.set(crane.x, 0, crane.z);
+  C3.lower.rotation.y = Math.atan2(crane.z, -crane.x);
+}
+const tmpV = new THREE.Vector3();
+function setHook(hp) {
+  C3.hp.copy(hp);
+  const dx = hp.x - crane.x, dz = hp.z - crane.z, r = Math.max(FOOT + 8, Math.hypot(dx, dz));
+  C3.house.rotation.y = Math.atan2(-dz, dx);
+  const th = Math.acos(clamp((r - FOOT) / LB, .05, .995));
+  C3.boom.rotation.z = th;
+  const tipL = new THREE.Vector3(FOOT + LB * Math.cos(th), FOOTY + LB * Math.sin(th) + 1.4, 0);
+  const pa = C3.pendant.geometry.attributes.position; pa.setXYZ(0, -6, 17, 0); pa.setXYZ(1, tipL.x, tipL.y, 0); pa.needsUpdate = true;
+  C3.house.updateMatrixWorld(true);
+  C3.tip.copy(tipL); C3.house.localToWorld(C3.tip);
+  const ha = C3.hookLine.geometry.attributes.position;
+  ha.setXYZ(0, C3.tip.x - .3, C3.tip.y, C3.tip.z); ha.setXYZ(1, hp.x - .3, hp.y + 2.2, hp.z);
+  ha.setXYZ(2, C3.tip.x + .3, C3.tip.y, C3.tip.z); ha.setXYZ(3, hp.x + .3, hp.y + 2.2, hp.z); ha.needsUpdate = true;
+  C3.hook.position.copy(hp);
+}
+function setSlings(m, on) {
+  C3.slings.visible = !!on; if (!on) return;
+  const n = NODES[m.id]; n.updateMatrixWorld(true);
+  const pts = m.kind === 'col' ? [[0, 15, .3], [0, 15, -.3]] : isHz(m) ? [[0, m.dv / 2, m.len * .3], [0, m.dv / 2, -m.len * .3]] : [[0, m.h / 2, m.len * .45], [0, m.h / 2, -m.len * .45]];
+  const a = C3.slings.geometry.attributes.position;
+  pts.forEach((p, i) => { tmpV.set(p[0], p[1], p[2]); n.localToWorld(tmpV); a.setXYZ(i * 2, C3.hp.x, C3.hp.y - .4, C3.hp.z); a.setXYZ(i * 2 + 1, tmpV.x, tmpV.y, tmpV.z); });
+  a.needsUpdate = true;
+}
+function hookFor(m, out) {
+  const n = NODES[m.id]; n.updateMatrixWorld(true);
+  if (m.kind === 'col') { out.set(0, 15, 0); n.localToWorld(out); out.y += 3; }
+  else { out.copy(n.position); out.y += (isHz(m) ? m.dv / 2 : m.h / 2) + 8; }
+  return out;
+}
+const idleHook = () => { const L = laydown(); return new THREE.Vector3(L.x, 14, L.z); };
+const clearY = m => m.kind === 'col' ? 51 : isHz(m) ? 37 + m.dv / 2 : 37 + m.h / 2;
+const restY = m => m.kind === 'col' ? COLV / 2 + .4 : isHz(m) ? m.dv / 2 + .5 : .6;
+
+function flight(m, u) {
+  const n = NODES[m.id], L = laydown();
+  const aT = Math.atan2(m.z - crane.z, m.x - crane.x), rT = Math.hypot(m.x - crane.x, m.z - crane.z);
+  const aL = Math.atan2(L.z - crane.z, L.x - crane.x), rL = Math.hypot(L.x - crane.x, L.z - crane.z);
+  const dA = wrap(aT - aL), yawL = m.yaw + dA, lies = m.kind !== 'bm' && m.kind !== 'gir';
+  let a = aL, r = rL, y, yaw = yawL, tilt = 0;
+  const yL = restY(m), Hc = clearY(m);
+  if (u < .25) { const s = ease(u / .25); y = lerp(yL, Hc, s); tilt = lies ? (Math.PI / 2) * (1 - ease(clamp(u / .2, 0, 1))) : 0; }
+  else if (u < .7) { const s = ease((u - .25) / .45); a = aL + dA * s; r = lerp(rL, rT, s); y = Hc; yaw = yawL - dA * s; }
+  else { const s = ease(clamp((u - .7) / .2, 0, 1)); a = aT; r = rT; y = lerp(Hc, m.y, s); yaw = m.yaw; }
+  n.position.set(crane.x + r * Math.cos(a), y, crane.z + r * Math.sin(a));
+  n.rotation.set(0, yaw, tilt);
+  const hp = hookFor(m, new THREE.Vector3());
+  if (u > .9) hp.y += 7 * ease((u - .9) / .1);
+  setHook(hp); setSlings(m, u < .93);
+}
+
+/* ---------------- overlay labels ---------------- */
+const labelsEl = $('labels'), LBL = {};
+function mkLabel(key, cls, text) { const el = document.createElement('span'); el.className = 'lb ' + cls; el.textContent = text; el.hidden = true; labelsEl.appendChild(el); LBL[key] = el; return el; }
+LIST.forEach(m => mkLabel(m.id, 'num', ''));
+LETS.forEach((L, j) => { mkLabel('gL' + L, 'bub', L).dataset.p = [sx(-16), 0, sz(GZ[j])].join(','); mkLabel('gR' + L, 'bub', L).dataset.p = [sx(136), 0, sz(GZ[j])].join(','); });
+NUMS.forEach((N, i) => mkLabel('gN' + N, 'bub', N).dataset.p = [sx(GX[i]), 0, sz(76)].join(','));
+FRAMES.forEach(f => { const a = M[f.cols[0]], b = M[f.cols[1]]; mkLabel('bf' + f.n, 'bf', 'BF').dataset.p = [(a.x + b.x) / 2, 33.5, (a.z + b.z) / 2].join(','); });
+mkLabel('rad', 'rad', '');
+const pv = new THREE.Vector3();
+let vw = 1, vh = 1;
+function put(el, x, y, z) {
+  pv.set(x, y, z).project(camera);
+  if (pv.z > 1 || pv.z < -1) { el.hidden = true; return; }
+  el.hidden = false; el.style.transform = `translate(${((pv.x + 1) / 2 * vw).toFixed(1)}px,${((1 - pv.y) / 2 * vh).toFixed(1)}px) translate(-50%,-50%)`;
+}
+function labelTop(m) { return m.kind === 'col' ? [m.x, 32.4, m.z] : isHz(m) ? [m.x, m.y + m.dv / 2 + 1.6, m.z] : [m.x, m.y, m.z]; }
+
+/* ---------------- UI ---------------- */
+const listEl = $('list');
+function save() { try { localStorage.setItem('pickbuilder.v1', JSON.stringify({ seq, crane, sample })); } catch (e) {} }
+function load() { try { const d = JSON.parse(localStorage.getItem('pickbuilder.v1') || 'null'); if (d && Array.isArray(d.seq)) return d; } catch (e) {} return null; }
+function sanitize(s) { const set = new Set(), out = []; for (const id of s || []) { const m = M[id]; if (m && ready(m, set)) { out.push(id); set.add(id); } } return out; }
+
+function changed() {
+  evaluate(); renderList(); renderStats(); save();
+  if (mode === 'play') { playT = Math.min(playT, seq.length); syncScrub(); }
+}
+function renderStats() {
+  const n = seq.length, rows = EV.rows;
+  $('sPicks').innerHTML = `${n}<small>/ ${LIST.length}</small>`;
+  const flags = rows.reduce((s, r) => s + r.flags.filter(f => f[0] !== 'note').length, 0);
+  $('sFlags').textContent = flags;
+  const peak = rows.reduce((s, r) => Math.max(s, r.pct), 0);
+  $('sPeak').textContent = isFinite(peak) ? Math.round(peak) + '%' : 'Off';
+  $('sRad').innerHTML = `${Math.round(rows.reduce((s, r) => Math.max(s, r.r), 0))}<small>ft</small>`;
+  const ok = EV.coreAt >= 0;
+  $('coreDot').className = 'dot' + (ok ? ' ok' : '');
+  $('coreTxt').textContent = ok ? `Braced core ${EV.coreBox.name} plumbed up at pick ${EV.coreAt + 1}` : 'Braced core not plumbed up yet';
+  $('sampleTag').hidden = !sample;
+  $('aUndo').disabled = !n && !cleared; $('aUndo').textContent = !n && cleared ? 'Restore' : 'Undo';
+  $('aClear').disabled = !n; $('aCopy').disabled = !n;
+}
+function renderList() {
+  if (!seq.length) {
+    listEl.innerHTML = `<li class="empty"><b>No picks yet.</b> Start at a braced bay: the boxes at grid A–B / 2–3 and B–C / 2–3 carry the braced frames, marked BF. Click a column there to make it pick 1, then keep clicking pieces in the order you would set them. Hit <b>Suggest a sequence</b> to see one worked out, or <b>Move crane</b> to try a new setup.</li>`;
+    return;
+  }
+  listEl.innerHTML = EV.rows.map((r, i) => {
+    const cls = r.pct > 100 || !isFinite(r.pct) ? 'x' : r.pct >= 85 ? 'w' : '';
+    const pct = isFinite(r.pct) ? Math.round(r.pct) : null;
+    const fl = r.flags.length ? `<div class="fl">${r.flags.map(f => `<p class="${f[0]}">${f[1]}</p>`).join('')}</div>` : '';
+    return `<li class="row" data-i="${i}"><span class="n">${i + 1}</span><span class="mk"><b>${r.m.id}</b><span>${describe(r.m)}</span></span><span class="wt r">${fmt(r.m.wt)}</span><span class="rr r">${Math.round(r.r)}'</span><span class="pct ${cls}"><i style="width:${Math.min(100, pct ?? 100)}%"></i><em>${pct == null ? 'off' : pct + '%'}</em></span>${fl}</li>`;
+  }).join('');
+  markRow(true);
+}
+let rowOn = -2;
+function markRow(force) {
+  const k = mode === 'play' ? Math.min(Math.floor(playT), seq.length - 1) : seq.length - 1;
+  if (k === rowOn && !force) return; rowOn = k;
+  listEl.querySelectorAll('.row.on').forEach(e => e.classList.remove('on'));
+  const el = listEl.querySelector(`.row[data-i="${k}"]`);
+  if (el) { el.classList.add('on'); const top = el.offsetTop - listEl.offsetTop, h = listEl.clientHeight; if (top < listEl.scrollTop || top + el.offsetHeight > listEl.scrollTop + h) listEl.scrollTop = top - h / 3; }
+}
+listEl.addEventListener('click', e => {
+  const row = e.target.closest('.row'); if (!row) return; const i = +row.dataset.i;
+  if (mode === 'play') { playing = false; playT = i + .9; syncPlay(); }
+  else { flashId = seq[i]; flashT = 1.2; }
+});
+let flashId = null, flashT = 0;
+
+function setHint() {
+  const h = $('hint');
+  if (placing) h.innerHTML = '<b>Move the crane.</b> Click the ground to set it up. The yellow ring is the 130 ft end of the chart. Esc cancels.';
+  else if (mode === 'play') h.innerHTML = seq.length ? '<b>Playback.</b> Drag to orbit, scroll or pinch to zoom. Click a row in the pick list to jump to it.' : '<b>Nothing to play yet.</b> Switch to Build and pick some steel, or hit Suggest a sequence.';
+  else if (!seq.length) h.innerHTML = '<b>Start at a braced bay.</b> Click a column in a box marked BF to make it pick 1.';
+  else h.innerHTML = '<b>Click a gray piece to set it next.</b> Pieces only light up once both their columns are standing. Click the last piece again to undo it.';
+}
+function setMode(m) {
+  mode = m; placing = false; $('bCrane').setAttribute('aria-pressed', 'false');
+  $('mBuild').setAttribute('aria-pressed', String(m === 'build')); $('mPlay').setAttribute('aria-pressed', String(m === 'play'));
+  $('player').hidden = m !== 'play'; $('legend').hidden = m !== 'build'; $('tip').hidden = true; hoverId = null;
+  if (m === 'play') { if (playT >= seq.length) playT = 0; playing = seq.length > 0 && !reduce; syncScrub(); }
+  else { playing = false; LIST.forEach(finalPose); C3.slings.visible = false; }
+  syncPlay(); setHint(); markRow(true);
+}
+$('mBuild').onclick = () => setMode('build');
+$('mPlay').onclick = () => setMode('play');
+$('bNums').onclick = () => { showNums = !showNums; $('bNums').setAttribute('aria-pressed', String(showNums)); };
+let placing = false, craneBefore = null;
+$('bCrane').onclick = () => {
+  if (placing) { crane = craneBefore; placeCrane(); placing = false; }
+  else { if (mode === 'play') setMode('build'); placing = true; craneBefore = { ...crane }; }
+  $('bCrane').setAttribute('aria-pressed', String(placing)); setHint();
+};
+$('aUndo').onclick = () => {
+  if (!seq.length && cleared) { seq = cleared.seq; sample = cleared.sample; cleared = null; }
+  else if (seq.length) { seq.pop(); sample = false; cleared = null; }
+  changed();
+};
+$('aClear').onclick = () => { if (!seq.length) return; cleared = { seq: seq.slice(), sample }; seq = []; sample = false; playT = 0; changed(); setHint(); };
+$('aSuggest').onclick = () => { cleared = seq.length ? { seq: seq.slice(), sample } : cleared; seq = suggest(); sample = true; playT = 0; changed(); setHint(); };
+$('aCopy').onclick = () => {
+  const txt = ['Pick  Piece      Description                     Lb     Radius  Chart', ...EV.rows.map((r, i) =>
+    `${String(i + 1).padStart(4)}  ${r.m.id.padEnd(9)}  ${describe(r.m).padEnd(30)}  ${fmt(r.m.wt).padStart(5)}  ${String(Math.round(r.r)).padStart(4)} ft  ${isFinite(r.pct) ? Math.round(r.pct) + '%' : 'off'}${r.flags.length ? '  ! ' + r.flags.map(f => f[1]).join(' / ') : ''}`)].join('\n');
+  const b = $('aCopy'), done = t => { b.textContent = t; setTimeout(() => b.textContent = 'Copy list', 1600); };
+  try { navigator.clipboard.writeText(txt).then(() => done('Copied'), () => done('Copy blocked')); } catch (e) { done('Copy blocked'); }
+};
+
+// player
+const scrub = $('scrub'), speedSel = $('speed');
+function syncScrub() { scrub.max = String(Math.max(1, seq.length)); scrub.value = String(playT); }
+function syncPlay() {
+  $('pIcon').innerHTML = playing ? '<path d="M3 2h4v12H3zM9 2h4v12H9z"/>' : '<path d="M3 2v12l11-6z"/>';
+  $('pPlay').setAttribute('aria-label', playing ? 'Pause' : 'Play'); syncScrub();
+}
+$('pPlay').onclick = () => { if (!seq.length) return; if (playT >= seq.length) playT = 0; playing = !playing; syncPlay(); };
+$('pStart').onclick = () => { playT = 0; playing = false; syncPlay(); };
+$('pPrev').onclick = () => { playing = false; playT = Math.max(0, Math.ceil(playT) - 1); syncPlay(); };
+$('pNext').onclick = () => { playing = false; playT = Math.min(seq.length, Math.floor(playT) + 1); syncPlay(); };
+scrub.addEventListener('input', () => { playing = false; playT = +scrub.value; syncPlay(); });
+speedSel.addEventListener('change', () => { speed = +speedSel.value; });
+let lastRead = '';
+function readout() {
+  const el = $('readout');
+  if (!seq.length) { if (lastRead !== 'e') { el.innerHTML = '<span class="f">No picks in the sequence yet.</span>'; lastRead = 'e'; } return; }
+  const k = Math.min(Math.floor(playT), seq.length - 1), done = playT >= seq.length;
+  const key = done ? 'done' : 'k' + k;
+  if (key === lastRead) return; lastRead = key;
+  if (done) { el.innerHTML = `<span class="k">Topped out</span><span class="f">${seq.length} picks${seq.length < LIST.length ? `, ${LIST.length - seq.length} pieces still on the ground` : ''}. Peak ${$('sPeak').textContent} of chart.</span>`; return; }
+  const r = EV.rows[k];
+  el.innerHTML = `<span class="k">Pick ${k + 1} of ${seq.length}</span><span class="m">${r.m.id}</span><span class="f">${describe(r.m)}</span><span class="m">${fmt(r.m.wt)} lb · ${Math.round(r.r)} ft · ${isFinite(r.pct) ? Math.round(r.pct) + '%' : 'off chart'}</span>` +
+    r.flags.map(f => `<span class="f" style="color:var(--${f[0] === 'note' ? 'ink-2' : f[0]})">${f[1]}</span>`).join('');
+}
+
+// pointer
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), gPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let hoverId = null, down = null, ptr = { x: 0, y: 0 };
+function setNdc(e) { const b = renderer.domElement.getBoundingClientRect(); ptr = { x: e.clientX - b.left, y: e.clientY - b.top }; ndc.set(ptr.x / b.width * 2 - 1, -(ptr.y / b.height) * 2 + 1); ray.setFromCamera(ndc, camera); }
+function pickHit() { const h = ray.intersectObjects(HITS, false); return h.length ? h[0].object.userData.id : null; }
+function validCrane(x, z) { return !(x > -74 && x < 74 && z > -44 && z < 44) && Math.hypot(x, z) < 260; }
+function updateHover() {
+  const tip = $('tip');
+  if (mode !== 'build' || placing) { hoverId = null; tip.hidden = true; return; }
+  hoverId = pickHit();
+  if (!hoverId) { tip.hidden = true; renderer.domElement.style.cursor = ''; return; }
+  const m = M[hoverId], set = new Set(seq), idx = seq.indexOf(hoverId), r = radiusOf(m), pct = (m.wt + RIG) / (capacity(r) || 1e-9) * 100;
+  let html = `<b>${m.id}</b><br>${describe(m)}<br>${fmt(m.wt)} lb · ${Math.round(r)} ft · ${pct > 999 ? 'off chart' : Math.round(pct) + '% of chart'}`;
+  if (idx >= 0) html += `<br>Pick ${idx + 1}${idx === seq.length - 1 ? '. Click to undo.' : ''}`;
+  else if (!ready(m, set)) html += `<br><span class="need">Stand ${m.cols.filter(c => !set.has(c)).join(' and ')} first.</span>`;
+  else html += `<br>Click to make it pick ${seq.length + 1}.`;
+  tip.innerHTML = html; tip.hidden = false;
+  tip.style.left = Math.min(ptr.x, vw - 250) + 'px'; tip.style.top = Math.min(ptr.y, vh - 110) + 'px';
+  renderer.domElement.style.cursor = idx === seq.length - 1 || ready(m, set) ? 'pointer' : 'not-allowed';
+}
+const cv = renderer.domElement;
+cv.addEventListener('pointermove', e => {
+  setNdc(e);
+  if (placing) { const p = new THREE.Vector3(); if (ray.ray.intersectPlane(gPlane, p) && validCrane(p.x, p.z)) { crane = { x: p.x, z: p.z }; placeCrane(); } return; }
+  if (e.pointerType === 'mouse' && !e.buttons) updateHover();
+});
+cv.addEventListener('pointerleave', () => { $('tip').hidden = true; hoverId = null; });
+cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+cv.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) { down = null; return; }
+  down = null; setNdc(e);
+  if (placing) {
+    const p = new THREE.Vector3();
+    if (ray.ray.intersectPlane(gPlane, p) && validCrane(p.x, p.z)) { crane = { x: Math.round(p.x), z: Math.round(p.z) }; placeCrane(); placing = false; $('bCrane').setAttribute('aria-pressed', 'false'); setHint(); changed(); }
+    return;
+  }
+  if (mode !== 'build') return;
+  const id = pickHit(); if (!id) return;
+  const m = M[id], set = new Set(seq);
+  if (seq[seq.length - 1] === id) { seq.pop(); sample = false; cleared = null; changed(); setHint(); }
+  else if (ready(m, set)) { seq.push(id); sample = false; cleared = null; changed(); setHint(); }
+  else { flashId = id; flashT = .8; }
+  if (e.pointerType === 'mouse') updateHover(); else $('tip').hidden = true;
+});
+addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input,select')) return;
+  if (e.key === 'Escape' && placing) { $('bCrane').click(); }
+  else if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey) && mode === 'build') { e.preventDefault(); $('aUndo').click(); }
+  else if (e.key === ' ' && mode === 'play' && e.target === document.body) { e.preventDefault(); $('pPlay').click(); }
+  else if (mode === 'play' && e.key === 'ArrowRight' && e.target === document.body) $('pNext').click();
+  else if (mode === 'play' && e.key === 'ArrowLeft' && e.target === document.body) $('pPrev').click();
+});
+
+/* ---------------- frame loop ---------------- */
+function resize() {
+  vw = stage.clientWidth; vh = stage.clientHeight;
+  renderer.setSize(vw, vh); camera.aspect = vw / Math.max(1, vh); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+const goal = new THREE.Vector3(), curHook = new THREE.Vector3();
+let last = 0;
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000 || .016); last = now;
+  controls.update();
+  const idx = {}; seq.forEach((id, i) => idx[id] = i);
+  const N = seq.length;
+  if (mode === 'play') {
+    if (playing) { playT = Math.min(N, playT + dt * speed / 3); if (playT >= N) { playing = false; syncPlay(); } scrub.value = String(playT); }
+    const k = Math.floor(playT), u = playT - k;
+    let flying = null;
+    for (const m of LIST) {
+      const i = idx[m.id];
+      if (i === undefined) { finalPose(m); look(m, mat.future); NODES[m.id].visible = false; }
+      else if (i < k) { finalPose(m); look(m, mat.set); }
+      else if (i === k && k < N) { flying = m; look(m, mat.fly); }
+      else { finalPose(m); look(m, mat.future); }
+    }
+    if (flying) flight(flying, u); else { setHook(idleHook()); C3.slings.visible = false; }
+    curHook.copy(C3.hp);
+    readout();
+  } else {
+    const set = new Set(seq);
+    if (flashT > 0) flashT -= dt;
+    for (const m of LIST) {
+      const i = idx[m.id], fl = flashT > 0 && flashId === m.id && Math.floor(flashT * 6) % 2 === 0;
+      if (fl || hoverId === m.id && (i === undefined ? ready(m, set) : true)) look(m, mat.hover);
+      else if (i !== undefined) look(m, i === N - 1 ? mat.last : mat.set);
+      else look(m, ready(m, set) ? mat.ready : mat.locked);
+    }
+    const tgt = hoverId ? M[hoverId] : N ? M[seq[N - 1]] : null;
+    if (tgt && !placing) goal.set(tgt.x, (tgt.kind === 'col' ? 30 : tgt.kind === 'xb' ? LEV[tgt.tier === 1 ? '2' : 'R'] : LEV[tgt.lev]) + 10, tgt.z); else goal.copy(idleHook());
+    if (curHook.lengthSq() === 0) curHook.copy(goal);
+    curHook.lerp(goal, 1 - Math.exp(-dt * (reduce ? 30 : 4)));
+    setHook(curHook); C3.slings.visible = false;
+  }
+  // radius line + label while hovering in build mode
+  const rl = LBL.rad;
+  if (mode === 'build' && hoverId && !placing) {
+    const m = M[hoverId], a = C3.radLine.geometry.attributes.position;
+    a.setXYZ(0, crane.x, .25, crane.z); a.setXYZ(1, m.x, .25, m.z); a.needsUpdate = true; C3.radLine.visible = true;
+    rl.textContent = `R ${Math.round(radiusOf(m))} ft`; put(rl, (crane.x + m.x) / 2, .5, (crane.z + m.z) / 2);
+  } else { C3.radLine.visible = false; rl.hidden = true; }
+  C3.ring.visible = placing || (mode === 'build' && !!hoverId);
+  // labels
+  const showN = showNums;
+  for (const m of LIST) {
+    const el = LBL[m.id], i = idx[m.id];
+    const vis = showN && i !== undefined && (mode === 'build' || i < Math.floor(playT));
+    if (!vis) { el.hidden = true; continue; }
+    const t = String(i + 1); if (el.textContent !== t) el.textContent = t;
+    el.classList.toggle('last', mode === 'build' && i === N - 1);
+    const p = labelTop(m); put(el, p[0], p[1], p[2]);
+  }
+  for (const key in LBL) {
+    const el = LBL[key]; if (!el.dataset.p) continue;
+    if (key.startsWith('bf') && mode !== 'build') { el.hidden = true; continue; }
+    const p = el.dataset.p.split(',').map(Number); put(el, p[0], p[1], p[2]);
+  }
+  markRow();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- boot ---------------- */
+function start(data) {
+  const saved = data && Array.isArray(data.seq) ? data : load();
+  if (saved) {
+    seq = sanitize(saved.seq); sample = !!saved.sample;
+    if (saved.crane && validCrane(+saved.crane.x, +saved.crane.z)) crane = { x: +saved.crane.x, z: +saved.crane.z };
+  } else { seq = suggest(); sample = true; }
+  placeCrane(); applyTheme(); resize();
+  if (camera.aspect < .9) { camera.position.set(-250, 200, -320); controls.update(); }
+  evaluate(); renderList(); renderStats();
+  const startMode = data && data.mode ? data.mode : (saved ? 'build' : 'play');
+  if (data && typeof data.playT === 'number') playT = data.playT;
+  setMode(startMode);
+  if (reduce && startMode === 'play' && !(data && typeof data.playT === 'number')) { playT = seq.length; syncPlay(); }
+  requestAnimationFrame(t => { last = t; requestAnimationFrame(frame); });
+}
+new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
+const hot = window.claude && window.claude.hot;
+if (hot && hot.snapshot) hot.snapshot(() => ({ seq, crane, sample, mode, playT }));
+if (hot && hot.ready) hot.ready(start); else start(hot && hot.data);
+})();
+</script>
+
+</body>
+</html>
