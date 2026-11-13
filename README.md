@@ -4,6 +4,7 @@ Interactive steel erection sequence builder. Click pieces in the order you would
 
 - 4 x 2 bay, 30 ft grid, two-level frame (67 pieces), four braced frames
 - Far to near: any pick that reaches over framed steel to hang the back side gets flagged
+- No flagpoles: two columns then the beam between them, or one column then the beam that ties it in. Anything else gets flagged
 - Other flags: start outside the far braced bay, freestanding columns, roof before level 2, pieces not tied to the braced core, picks over 85% of chart
 - Crane: LR 1300 class on main boom. The other crane setups are switched off for now
 - Movable crane and laydown yard. Steel stacks in the yard and gets picked off the pile during playback, and the shakeout pick is checked against the chart

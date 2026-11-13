@@ -305,7 +305,7 @@ function evaluate() {
   const set = new Set(), rows = [];
   let coreAt = -1, coreBoxes = [];
   for (let i = 0; i < seq.length; i++) {
-    const m = M[seq[i]], f = [];
+    const m = M[seq[i]], f = [], Fb = freeCols(set);
     if (i === 0 && !(m.kind === 'col' && m.box.length)) f.push(['warn', 'Start at a braced bay. Stand a column in one of the braced boxes first.']);
     else if (i === 0 && !farBox().cols.includes(m.id)) f.push(['warn', `Start at the braced bay farthest from the crane (${farBox().name}) so you can hang far to near.`]);
     else if (coreAt < 0 && i > 0 && !m.box.length) f.push(['warn', 'Out of the braced bay before the core is plumbed and braced.']);
@@ -314,9 +314,13 @@ function evaluate() {
     let justMade = false;
     if (coreAt < 0) { coreBoxes = BOXES.filter(b => b.core.every(id => set.has(id))); if (coreBoxes.length) { coreAt = i; justMade = true; } }
     else BOXES.forEach(b => { if (!coreBoxes.includes(b) && b.core.every(id => set.has(id))) coreBoxes.push(b); });
+    // no flagpoles: two columns then the beam between them, or one column then the beam that ties it in
     if (m.kind === 'col') {
-      const free = LIST.filter(c => c.kind === 'col' && set.has(c.id) && !c.links.some(l => set.has(l))).length;
-      if (free > 4) f.push(['warn', `${free} columns freestanding. Tie some in before you stand more.`]);
+      if (Fb.length >= 2) f.push(['warn', `Flagpole. ${Fb.join(' and ')} are still standing alone. Hang the beam between them first.`]);
+      else if (Fb.length === 1 && !adjCols(Fb[0], m.id)) f.push(['warn', `Flagpole. ${Fb[0]} is standing alone and no beam can tie it to ${m.id}. Tie ${Fb[0]} in first.`]);
+    } else {
+      const Fa = freeCols(set), left = Fb.filter(c => Fa.includes(c));
+      if (left.length) f.push(['warn', `Flagpole. ${left.join(' and ')} ${left.length > 1 ? 'are' : 'is'} still standing alone. Tie ${left.length > 1 ? 'them' : 'it'} in before anything else.`]);
     }
     if (coreAt >= 0 && !justMade && isHz(m) && !tied(m.cols[0], set, coreBoxes)) f.push(['warn', 'Not tied back to the braced core.']);
     const bl = blocker(m, set);
@@ -364,12 +368,31 @@ function blocker(m, set) {
 const farBox = () => BOXES.slice().sort((a, b) => boxR(b) - boxR(a))[0];
 const boxR = b => { const cs = b.cols.map(id => M[id]); return Math.hypot(cs.reduce((a, c) => a + c.x, 0) / 4 - crane.x, cs.reduce((a, c) => a + c.z, 0) / 4 - crane.z); };
 // far to near: start at the braced bay farthest from the crane, then always take the farthest piece you can tie in
+const freeCols = st => LIST.filter(c => c.kind === 'col' && st.has(c.id) && !c.links.some(l => st.has(l))).map(c => c.id);
+const adjCols = (a, b) => M[a].links.some(l => isHz(M[l]) && M[l].cols.includes(b));
 function suggest() {
   const out = [], set = new Set(), put = id => { if (!set.has(id)) { out.push(id); set.add(id); } };
   const R = m => radiusOf(m), pri = m => m.kind === 'xb' ? (m.tier === 1 ? 1 : 3) : m.lev === '2' ? 0 : 2;
   const order = (a, b) => Math.abs(R(b) - R(a)) > .5 ? R(b) - R(a) : pri(a) - pri(b);
   const box = farBox();
-  box.cols.map(id => M[id]).sort(order).forEach(m => put(m.id));
+  // braced box: two columns and the beam between them, then a column around the corner and its beam, brace off the corner, then the last column
+  const bset = new Set(box.all), frameCols = FRAMES.filter(f => bset.has('X1-' + f.n)).map(f => f.cols);
+  const makesFrame = c => frameCols.some(fc => fc.includes(c.id) && fc.every(id => id === c.id || set.has(id)));
+  for (let guard = 0; guard < 40 && !box.cols.every(id => set.has(id)); guard++) {
+    const F = freeCols(set);
+    if (F.length) {
+      const tie = LIST.filter(m => isHz(m) && m.lev === '2' && bset.has(m.id) && ready(m, set) && m.cols.some(c => F.includes(c))).sort(order);
+      if (tie.length) { put(tie[0].id); continue; }
+    } else if (box.cols.filter(id => set.has(id)).length >= 3) {
+      const br = LIST.filter(m => m.kind === 'xb' && m.tier === 1 && bset.has(m.id) && ready(m, set)).sort(order);
+      if (br.length) { put(br[0].id); continue; }
+    }
+    const cand = box.cols.map(id => M[id]).filter(c => !set.has(c.id) && (!set.size || box.cols.some(o => set.has(o) && adjCols(c.id, o))));
+    if (!cand.length) break;
+    cand.sort((a, b) => (set.size >= 2 ? makesFrame(b) - makesFrame(a) : 0) || order(a, b));
+    put(cand[0].id);
+  }
+  for (const c of freeCols(set)) { const tie = LIST.filter(m => isHz(m) && m.lev === '2' && ready(m, set) && m.cols.includes(c)).sort(order)[0]; if (tie) put(tie.id); }
   box.all.map(id => M[id]).filter(m => m.kind !== 'col').sort(order).forEach(m => put(m.id));
   const fill = () => LIST.filter(m => m.kind !== 'col' && ready(m, set)).sort(order).forEach(m => put(m.id));
   for (;;) {
@@ -692,7 +715,7 @@ function labelTop(m) { return m.kind === 'col' ? [m.x, 32.4, m.z] : isHz(m) ? [m
 
 /* ---------------- UI ---------------- */
 const listEl = $('list');
-function save() { try { localStorage.setItem('pickbuilder.v1', JSON.stringify({ v2: true, seq, crane, sample, craneType, layAt })); } catch (e) {} }
+function save() { try { localStorage.setItem('pickbuilder.v1', JSON.stringify({ v3: true, seq, crane, sample, craneType, layAt })); } catch (e) {} }
 function load() { try { const d = JSON.parse(localStorage.getItem('pickbuilder.v1') || 'null'); if (d && Array.isArray(d.seq)) return d; } catch (e) {} return null; }
 function sanitize(s) { const set = new Set(), out = []; for (const id of s || []) { const m = M[id]; if (m && ready(m, set)) { out.push(id); set.add(id); } } return out; }
 
@@ -956,7 +979,7 @@ function start(data) {
     if (saved.layAt && isFinite(+saved.layAt.x)) layAt = { x: +saved.layAt.x, z: +saved.layAt.z };
     if (saved.crane && validCrane(+saved.crane.x, +saved.crane.z)) crane = { x: +saved.crane.x, z: +saved.crane.z };
     if (saved.craneType) craneType = saved.craneType;
-    if (saved.v2 !== true && saved.sample) saved.reseq = true;
+    if (saved.v3 !== true && saved.sample) saved.reseq = true;
   }
   setCraneType(craneType);
   if (!saved || saved.reseq) { seq = suggest(); sample = true; }
@@ -972,7 +995,7 @@ function start(data) {
 new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
 const hot = window.claude && window.claude.hot;
-if (hot && hot.snapshot) hot.snapshot(() => ({ v2: true, seq, crane, sample, mode, playT, craneType, layAt }));
+if (hot && hot.snapshot) hot.snapshot(() => ({ v3: true, seq, crane, sample, mode, playT, craneType, layAt }));
 if (hot && hot.ready) hot.ready(start); else start(hot && hot.data);
 })();
 </script>
